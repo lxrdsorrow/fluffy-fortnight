@@ -1,0 +1,28 @@
+{
+  "name": "houston-survival-map",
+  "version": "1.0.0",
+  "description": "Offline survival map for Houston, Texas",
+  "scripts": {
+    "test": "node tests/offline.test.mjs tests/cases.houston-metro.json app/data",
+    "start": "node scripts/serve.mjs 8080 app",
+    "vendor": "node scripts/vendor.mjs",
+    "build-data": "bash pipeline/build_all.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lxrdsorrow/fluffy-fortnight.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/lxrdsorrow/fluffy-fortnight/issues"
+  },
+  "homepage": "https://github.com/lxrdsorrow/fluffy-fortnight#readme",
+  "dependencies": {
+    "@protomaps/basemaps": "5.1.0",
+    "maplibre-gl": "4.7.1",
+    "pmtiles": "3.2.1",
+    "sql.js": "1.11.0"
+  },
+  "type": "module"
+}

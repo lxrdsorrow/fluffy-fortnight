@@ -1,0 +1,8 @@
+{
+  "about": "SYNTHETIC scouted places for the Testville test town (tests only).",
+  "pois": [
+    {"cat": "police", "name": "Testville Police Station", "addr": "1 Test Plaza", "pc": "77999", "phone": "(000) 000-0000", "lat": 29.8815, "lon": -95.4525},
+    {"cat": "foodbank", "name": "Testville Food Pantry", "addr": "302 Echo St", "pc": "77999"},
+    {"cat": "clinic", "name": "Ghost Clinic", "addr": "999 Nowhere Rd", "pc": "77999"}
+  ]
+}

@@ -1,0 +1,17 @@
+HOUSTON SURVIVAL MAP — laptop quick start
+=========================================
+
+1. Install Node.js (free, from nodejs.org) — only needed once.
+2. Open a terminal in this folder and type:
+
+       node scripts/serve.mjs 8080 app
+
+3. Open http://localhost:8080 in Chrome, Edge or Firefox.
+4. Tap "More" -> "Map areas & storage" -> "Download" (this copies the map
+   into the browser so it works without internet).
+5. Done. Turn off Wi-Fi and try it. Keep step 2 running while you use it
+   (localhost works with no internet).
+
+Note: most laptops have no GPS chip. With no internet, the laptop may not
+know where you are — pick "Start from the map center" or a saved place.
+Phones have GPS that works offline.

@@ -1,0 +1,13 @@
+{
+  "about": "Downloadable map packs. Phase 1 = Houston metro only. Later phases add packs here (a Texas state pack, then US state packs) without changing the app: each pack is built and downloaded on its own.",
+  "areas": [
+    {
+      "id": "houston-metro",
+      "name": "Houston metro (all of Houston and Harris County, plus nearby suburbs)",
+      "kind": "metro",
+      "region": "TX",
+      "bbox": [-96.00, 29.40, -94.85, 30.25],
+      "maxzoom": 14
+    }
+  ]
+}

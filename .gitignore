@@ -147,3 +147,8 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Built map data (large; made by pipeline/build_all.sh or the GitHub Action)
+app/data/
+build-cache/
+__pycache__/

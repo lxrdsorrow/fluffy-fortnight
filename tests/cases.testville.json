@@ -1,0 +1,36 @@
+{
+  "area": "testville",
+  "gps": [
+    29.8755,
+    -95.4645
+  ],
+  "addressQueries": [
+    {
+      "q": "301 Delta St",
+      "expect": "301 Delta St"
+    },
+    {
+      "q": "201 bravo street",
+      "expect": "201 Bravo St"
+    }
+  ],
+  "samplePostcodes": {
+    "77999": 3
+  },
+  "closestQuery": "399 Delta St",
+  "placeQuery": {
+    "q": "Testville General",
+    "expect": "Testville General Hospital"
+  },
+  "routeTo": "501 Foxtrot St",
+  "noWalkRoute": "Island Rd",
+  "homeQuery": "100 Alpha St",
+  "floodRoute": "601 Foxtrot St",
+  "stopQuery": "302 Echo St",
+  "scoutedQueries": [
+    {
+      "q": "Testville Food Pantry",
+      "expect": "Testville Food Pantry"
+    }
+  ]
+}
