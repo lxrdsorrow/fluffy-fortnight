@@ -1,6 +1,8 @@
 # Tests the LIVE website (GitHub Pages) from GitHub's computers:
 # checks the pack list and map files are reachable, then runs the
 # airplane-mode tests against the real published site.
+# It runs after each website update from main (or by hand from the Actions tab),
+# never on branch pushes: the live site only changes when main is deployed.
 name: Live site test
 
 on:
@@ -9,9 +11,6 @@ on:
     workflows: ['Build Houston map data']
     types: [completed]
     branches: [main]
-  push:
-    branches: [claude/offline-houston-survival-map-evr88f]
-    paths: ['.github/workflows/live-test.yml', 'tests/**']
 
 permissions:
   contents: read
