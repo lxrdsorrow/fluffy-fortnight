@@ -48,6 +48,10 @@ async function searchAndPick(p, q) {
   return { suggestions, first };
 }
 
+async function closeIfOpen(p) {
+  if (await p.isVisible('#sheet-close')) await p.click('#sheet-close');
+}
+
 async function routeShown(p, timeout = 30000) {
   await p.waitForFunction(() => {
     const r = document.querySelector('#dres');
@@ -61,7 +65,7 @@ await new Promise((r) => setTimeout(r, 700));
 const browser = await chromium.launch();
 const ctx = await browser.newContext({
   geolocation: { latitude: cases.gps[0], longitude: cases.gps[1], accuracy: 10 },
-  permissions: ['geolocation'], viewport: { width: 420, height: 860 },
+  permissions: ['geolocation', 'accelerometer', 'gyroscope', 'magnetometer'], viewport: { width: 420, height: 860 },
 });
 const outside = [];
 ctx.on('request', (r) => { if (!r.url().startsWith(BASE) && !r.url().startsWith('blob:') && !r.url().startsWith('data:')) outside.push(r.url()); });
@@ -123,8 +127,19 @@ try {
   record(3, 'Place name search + route', pl.first.toLowerCase().includes(cases.placeQuery.expect.toLowerCase()) && /about \d/.test(r3),
     `"${cases.placeQuery.q}" → "${pl.first.slice(0, 70)}"; route: ${r3.slice(0, 80)}`);
 
+  // 3b. scouted (verified) places are searchable
+  if (cases.scoutedQueries) {
+    const got = [];
+    for (const c of cases.scoutedQueries) {
+      const { first } = await searchAndPick(page, c.q);
+      got.push({ ok: first.toLowerCase().includes(c.expect.toLowerCase()), d: `"${c.q}" → "${first.slice(0, 60)}"` });
+    }
+    record('3b', 'Scouted places can be searched', got.every((g) => g.ok), got.map((g) => `${g.ok ? 'ok' : 'MISS'} ${g.d}`).join(' | '));
+    await closeIfOpen(page);
+  }
+
   // 4. GPS → typed address, driving
-  await page.click('#sheet-close');
+  await closeIfOpen(page);
   await searchAndPick(page, cases.routeTo);
   await page.click('[data-a="go"]');
   await page.click('[data-mode="car"]');
@@ -145,7 +160,7 @@ try {
   const bikeTime = await page.evaluate(() => window.hsm.route && window.hsm.route.mode === 'bike' && window.hsm.route.time);
   record('5b', 'Same route, biking', bikeTime > 0 && bikeTime < walkTime, `bike ${Math.round(bikeTime / 60)} min`);
   if (cases.noWalkRoute) {
-    await page.click('#sheet-close');
+    await closeIfOpen(page);
     await searchAndPick(page, cases.noWalkRoute);
     await page.click('[data-a="go"]');
     await page.click('[data-mode="foot"]');
@@ -156,7 +171,7 @@ try {
   }
 
   // 6. nearest hospital
-  await page.click('#sheet-close');
+  await closeIfOpen(page);
   await page.click('[data-act="hospital"]');
   await page.waitForSelector('[data-a="go"]');
   const h = await text(page, '#sheet-body');
@@ -164,8 +179,55 @@ try {
   const r6 = await routeShown(page);
   record(6, 'Nearest hospital', /Nearest hospital: [\d.]+ (mi|ft)/.test(h) && /about \d/.test(r6), `${(await text(page, '#dto-s').catch(() => '')) || ''}${h.slice(0, 110)} → ${r6.slice(0, 50)}`);
 
-  // 7. saved place survives closing the app
-  await page.click('#sheet-close');
+  // F. flood warning (Houston-specific extra check)
+  await closeIfOpen(page);
+  await searchAndPick(page, cases.floodRoute);
+  await page.click('[data-a="go"]');
+  await page.click('[data-mode="car"]');
+  let rF = await routeShown(page);
+  if (!/Flood warning/.test(rF) && await page.isChecked('#avoidflood')) {
+    await page.uncheck('#avoidflood');
+    await page.waitForTimeout(500);
+    rF = await routeShown(page);
+  }
+  const flood = rF.match(/Flood warning:.*?NOT a live flood report/);
+  record('F', 'Flood warning on a flood-prone route', !!flood, flood ? flood[0].slice(0, 260) : rF.slice(0, 200));
+  await page.check('#avoidflood');
+  await page.waitForTimeout(500);
+
+  // 7. POI toggles on the map
+  await closeIfOpen(page);
+  const groups = await page.$$eval('#layers [data-layer]', (els) => els.map((e) => e.dataset.layer));
+  const t7 = [];
+  for (const g of groups) {
+    const res = await page.evaluate(async (g) => {
+      const map = window.hsm.map;
+      const pressed = () => document.querySelector(`#layers [data-layer="${g}"]`).getAttribute('aria-pressed') === 'true';
+      const src = map.getSource('allpois')._data.features.filter((f) => f.properties.group === g);
+      if (pressed()) document.querySelector(`#layers [data-layer="${g}"]`).click(); // start from "off"
+      if (src.length) {
+        const b = new maplibregl.LngLatBounds();
+        src.slice(0, 50).forEach((f) => b.extend(f.geometry.coordinates));
+        map.fitBounds(b, { padding: 80, duration: 0, maxZoom: 15 });
+      }
+      const wait = () => new Promise((r) => { map.once('idle', r); setTimeout(r, 3000); map.triggerRepaint(); });
+      await wait();
+      const offCount = map.queryRenderedFeatures({ layers: ['allpois'] }).filter((f) => f.properties.group === g).length;
+      document.querySelector(`#layers [data-layer="${g}"]`).click();
+      await wait();
+      const onCount = map.queryRenderedFeatures({ layers: ['allpois'] }).filter((f) => f.properties.group === g).length;
+      document.querySelector(`#layers [data-layer="${g}"]`).click();
+      await wait();
+      const offAgain = map.queryRenderedFeatures({ layers: ['allpois'] }).filter((f) => f.properties.group === g).length;
+      return { total: src.length, offCount, onCount, offAgain };
+    }, g);
+    t7.push({ g, ...res, ok: res.total === 0 ? null : res.offCount === 0 && res.onCount > 0 && res.offAgain === 0 });
+  }
+  const t7ok = t7.every((x) => x.ok !== false) && t7.filter((x) => x.ok).length >= Math.min(5, t7.length);
+  record(7, 'Place toggles show / hide Hospital, Shelter, Water, Food, Gas, Pharmacy, Police/Fire', t7ok,
+    t7.map((x) => `${x.g}: ${x.total === 0 ? 'no places in data' : `${x.total} in data, off→${x.offCount} shown, on→${x.onCount} shown, off→${x.offAgain}`}`).join(' | '));
+
+  // 8. saved place survives closing the app
   await searchAndPick(page, cases.homeQuery);
   await page.click('[data-a="save"]');
   await page.fill('#sname', 'Home');
@@ -177,65 +239,118 @@ try {
   await page.waitForFunction(() => document.body.dataset.ready === 'area', null, { timeout: 60000 });
   await page.click('[data-act="saved"]');
   await page.click('[data-go]');
-  const r7 = await routeShown(page);
-  record(7, 'Saved Home → reopen app offline → tap Home → route', /about \d/.test(r7), r7.slice(0, 80));
+  const r8 = await routeShown(page);
+  record(8, 'Saved Home → reopen app offline → tap Home → route', /about \d/.test(r8), r8.slice(0, 80));
 
-  // 8. flood warning
-  await page.click('#sheet-close');
-  await searchAndPick(page, cases.floodRoute);
+  // 9. waypoints + breadcrumb trail
+  await closeIfOpen(page);
+  await searchAndPick(page, cases.routeTo);
   await page.click('[data-a="go"]');
-  await page.click('[data-mode="car"]');
-  let r8 = await routeShown(page);
-  const avoidChecked = await page.isChecked('#avoidflood');
-  if (!/Flood warning/.test(r8) && avoidChecked) { // with "avoid" on the safer route may have none; turn it off to check warnings appear
-    await page.uncheck('#avoidflood');
-    await page.waitForTimeout(500);
-    r8 = await routeShown(page);
+  await routeShown(page);
+  const before = await page.evaluate(() => window.hsm.route.dist);
+  await page.click('#addstop');
+  await page.fill('#dstop', cases.stopQuery);
+  await page.waitForSelector('#dstop-s:not([hidden]) .item', { timeout: 8000 });
+  await page.click('#dstop-s .item');
+  await page.waitForFunction(() => window.hsm.route && window.hsm.route.stopsAt && window.hsm.route.stopsAt.length === 1, null, { timeout: 30000 });
+  const r9a = await text(page, '#dres');
+  const withStop = await page.evaluate(() => window.hsm.route.dist);
+  const stopOk = /Arrive at stop 1/.test(r9a) && /1 stop/.test(r9a) && withStop > before;
+  // trail: start recording, then "walk" by moving the GPS position
+  await closeIfOpen(page);
+  await page.click('[data-act="more"]');
+  await page.click('[data-m="trail"]');
+  await page.click('#tstart');
+  const [lat0, lon0] = cases.gps;
+  for (let i = 1; i <= 6; i++) {
+    await ctx.setGeolocation({ latitude: lat0 + i * 0.0004, longitude: lon0 + i * 0.0002, accuracy: 8 });
+    await page.waitForTimeout(700);
   }
-  const flood = r8.match(/Flood warning:.*?NOT a live flood report/);
-  record(8, 'Flood warning on a flood-prone route', !!flood, flood ? flood[0].slice(0, 260) : r8.slice(0, 200));
-  await page.check('#avoidflood');
-  await page.waitForTimeout(500);
-  const r8b = await routeShown(page);
-  console.log('   with "prefer routes away from flood-prone roads" on:', (r8b.match(/(Chose a route[^.]*\.|No nearby route[^.]*\.|A route with fewer[^.]*\.)/) || ['(no change needed)'])[0]);
+  const recorded = await page.evaluate(() => JSON.parse(localStorage.getItem('hsm.trails')).current.points.length);
+  await page.click('[data-act="more"]');
+  await page.click('[data-m="trail"]');
+  await page.click('#tstop');
+  await page.waitForSelector('[data-back]');
+  await page.click('[data-back]');
+  const r9b = await routeShown(page);
+  const backTo = await page.evaluate(() => window.hsm.route && window.hsm.route.to);
+  const backOk = recorded >= 5 && /about \d/.test(r9b) && backTo && Math.abs(backTo[1] - lat0) < 0.001;
+  record(9, 'Waypoints (route stop) + breadcrumb trail records and routes back', stopOk && backOk,
+    `stop: ${stopOk ? 'ok' : 'FAILED'} (${(before / 1609).toFixed(1)} mi → ${(withStop / 1609).toFixed(1)} mi with stop "${cases.stopQuery}"); trail: ${recorded} points recorded, back-route ${r9b.slice(0, 40)} to ${backTo ? backTo[1].toFixed(5) + ',' + backTo[0].toFixed(5) : 'none'}`);
+  await ctx.setGeolocation({ latitude: lat0, longitude: lon0, accuracy: 10 });
 
-  // 9. battery saver
-  await page.click('#sheet-close');
+  // 10. GPS + compass dashboard
+  await closeIfOpen(page);
+  await searchAndPick(page, cases.routeTo);
+  await page.click('[data-a="go"]');
+  await routeShown(page);
+  await closeIfOpen(page);
+  await page.click('#dashbtn');
+  await page.waitForSelector('.tiles');
+  if (await page.$('#compass')) {
+    await page.click('#compass');
+    await page.waitForTimeout(200);
+  }
+  await page.evaluate(() => window.dispatchEvent(Object.assign(new Event('deviceorientationabsolute'), { alpha: 90, absolute: true })));
+  await page.waitForTimeout(1500);
+  const d10 = await text(page, '#sheet-body');
+  const coordsOk = d10.includes(cases.gps[0].toFixed(3));
+  const headingOk = /270° west/.test(d10);
+  const distOk = /Distance to destination\s*[\d.]+ (mi|ft)/.test(d10);
+  const etaOk = /ETA \(estimate\)\s*about \d/.test(d10);
+  const batOk = /Battery\s*(\d+%|—)/.test(d10);
+  const helpOk = /Hospital: [\d.]+ (mi|ft)/.test(d10);
+  await page.screenshot({ path: join(dataDir, `screen-${cases.area}-dashboard.png`) });
+  record(10, 'GPS + compass dashboard (coordinates, compass, distance, battery, ETA)', coordsOk && headingOk && distOk && etaOk && batOk && helpOk,
+    `coords=${coordsOk} compass=${headingOk} distance=${distOk} eta=${etaOk} battery=${(d10.match(/Battery\s*(\d+%|—)/) || [])[1]} nearest-help=${helpOk}`);
+
+  // 11. battery saver
+  await closeIfOpen(page);
   await page.click('[data-act="more"]');
   await page.check('#battery');
   await page.waitForTimeout(800);
-  await page.click('#sheet-close');
-  const st9 = await text(page, '#status');
-  const s9 = await searchAndPick(page, cases.routeTo);
+  await closeIfOpen(page);
+  const st11 = await text(page, '#status');
+  const s11 = await searchAndPick(page, cases.routeTo);
   await page.click('[data-a="go"]');
-  const r9 = await routeShown(page);
+  const r11 = await routeShown(page);
   const dark = await page.evaluate(() => document.documentElement.dataset.theme);
-  record(9, 'Battery saver: still maps, searches, routes offline', /battery saver/.test(st9) && dark === 'dark' && /about \d/.test(r9) && !!s9.first,
-    `status="${st9}", theme=${dark}, search→"${s9.first.slice(0, 40)}", route ${r9.slice(0, 40)}`);
+  record(11, 'Battery saver: still maps, searches, routes offline', /battery saver/.test(st11) && dark === 'dark' && /about \d/.test(r11) && !!s11.first,
+    `status="${st11}", theme=${dark}, search→"${s11.first.slice(0, 40)}", route ${r11.slice(0, 40)}`);
   await page.screenshot({ path: join(dataDir, `screen-${cases.area}-battery.png`) });
 
-  // 10. no reviews / no live claims
+  // 12. no reviews / no live claims
   const seen = [];
-  for (const m of ['essentials', 'help', 'pins', 'guide', 'checklist', 'areas', 'about']) {
+  for (const m of ['essentials', 'dash', 'trail', 'pins', 'guide', 'checklist', 'areas', 'about']) {
+    await closeIfOpen(page);
     await page.click('[data-act="more"]');
     await page.click(`[data-m="${m}"]`);
     await page.waitForTimeout(300);
     seen.push(await text(page, '#sheet-body'));
   }
-  const all = seen.join(' ') + ' ' + r4 + r8 + (await text(page, 'body'));
+  const all = seen.join(' ') + ' ' + r4 + rF + (await text(page, 'body'));
   // Any mention of "live", "open now", etc. must be a NOT-statement ("cannot know live traffic").
   const chunks = all.split(/(?<=[.!?])\s+|\n/);
   const bad = [];
   for (const c of chunks) {
     if (/\b(reviews?|ratings?|★)/i.test(c)) bad.push(c.slice(0, 60));
-    else if (/\b(live (traffic|status|flood|report|data|camera|information|update)s?|open now|closed now|in stock|currently flooded|road is clear|space available)\b/i.test(c)
+    else if (/\b(live (traffic|status|flood|report|data|camera|information|update)s?|open now|closed now|open 24|hours:|in stock|currently flooded|road is clear|space available)\b/i.test(c)
       && !/\b(not|no|cannot|can't|never|NOT)\b/i.test(c)) bad.push(c.slice(0, 60));
   }
   const src = readdirSync('app/js').map((f) => readFileSync(join('app/js', f), 'utf8')).join('\n');
   const srcBad = src.match(/\b(review|rating|open now|opening_hours)\b/gi) || [];
-  record(10, 'No reviews, no live-status claims', bad.length === 0 && srcBad.length === 0,
-    `forbidden words on screens: ${bad.length ? bad.join(', ') : 'none'}; in app code: ${srcBad.length ? srcBad.join(', ') : 'none'}`);
-  record('10b', 'No internet requests from the app', outside.length === 0, outside.length ? outside.slice(0, 5).join(' ') : 'zero requests left this computer');
+  const poisTxt = readFileSync(join(dataDir, cases.area, 'pois.json'), 'utf8');
+  const hoursInData = /opening_hours|"hours"|\d{1,2}:\d\d\s*(AM|PM)/i.test(poisTxt);
+  record(12, 'No reviews, no live-status claims', bad.length === 0 && srcBad.length === 0 && !hoursInData,
+    `forbidden words on screens: ${bad.length ? bad.join(', ') : 'none'}; in app code: ${srcBad.length ? srcBad.join(', ') : 'none'}; opening hours in place data: ${hoursInData ? 'YES' : 'none'}`);
+
+  // 13. only the Houston metro pack exists in Phase 1
+  const packs = JSON.parse(readFileSync(join(dataDir, 'areas.json'), 'utf8')).areas;
+  const onDevice = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem('hsm.downloadedAreas') || '{}')).map((a) => `${a.id}:${a.kind}`));
+  const packsOk = packs.every((a) => (a.kind || 'metro') === 'metro') && !packs.some((a) => /texas|state|^us/i.test(a.id));
+  record(13, 'No Texas or US pack built or downloaded (metro pack only)', packsOk && onDevice.length === 1,
+    `packs offered: ${packs.map((a) => `${a.id} (${a.kind || 'metro'}, ${(a.bytes / 1e6).toFixed(1)} MB)`).join(', ')}; on device: ${onDevice.join(', ')}`);
+  record('13b', 'No internet requests from the app', outside.length === 0, outside.length ? outside.slice(0, 5).join(' ') : 'zero requests left this computer');
 } catch (err) {
   record('X', 'Test run crashed', false, err.message.split('\n')[0]);
   await page.screenshot({ path: join(dataDir, `screen-${cases.area}-crash.png`) }).catch(() => {});

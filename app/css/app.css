@@ -130,3 +130,12 @@ input, select, textarea {
 .maplibregl-ctrl-attrib { font-size: 11px; }
 .sheet.min { max-height: 64px; overflow: hidden; }
 .sheet.min #sheet-min { transform: rotate(180deg); }
+
+.layerchips { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 2px; scrollbar-width: none; }
+.layerchips button { flex: none; min-height: 40px; padding: 6px 12px; border-radius: 999px; font-size: 14px; background: var(--bg); box-shadow: var(--shadow); border: 2px solid transparent; }
+.layerchips button[aria-pressed="true"] { border-color: var(--chip); background: var(--chip); color: #fff; font-weight: 600; }
+.fab2 { bottom: calc(env(safe-area-inset-bottom) + 160px); font-size: 24px; }
+.tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 8px 0; }
+.tile { background: var(--card); border-radius: 12px; padding: 10px; }
+.big-num { font-size: 20px; font-weight: 700; word-break: break-word; }
+.stop { display: flex; align-items: center; justify-content: space-between; background: var(--card); border-radius: 10px; padding: 4px 4px 4px 12px; margin: 6px 0; }

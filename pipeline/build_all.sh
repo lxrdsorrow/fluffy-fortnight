@@ -41,10 +41,10 @@ AREAS=$(python3 -c "import json;print(' '.join(a['id'] for a in json.load(open('
 [ $# -gt 0 ] && AREAS="$*"
 
 for id in $AREAS; do
-  read -r NAME W S E N MAXZ < <(python3 - "$id" <<'EOF'
+  read -r NAME W S E N MAXZ KIND REGION < <(python3 - "$id" <<'EOF'
 import json, sys
 a = next(x for x in json.load(open("pipeline/areas.json"))["areas"] if x["id"] == sys.argv[1])
-print(a["name"].replace(" ", "_"), *a["bbox"], a["maxzoom"])
+print(a["name"].replace(" ", "_"), *a["bbox"], a["maxzoom"], a.get("kind", "metro"), a.get("region", "TX"))
 EOF
 )
   NAME=${NAME//_/ }
@@ -61,7 +61,8 @@ EOF
     echo "!! FEMA flood data could not be downloaded; building without the flood layer"
   fi
   python3 pipeline/build_area.py --pbf "$WORK/$id.osm.pbf" --out "$OUT/$id" --id "$id" \
-    --name "$NAME" --bbox "$W" "$S" "$E" "$N" "${FLOOD_ARG[@]}"
+    --name "$NAME" --bbox "$W" "$S" "$E" "$N" --kind "$KIND" --region "$REGION" \
+    --curated pipeline/curated_pois.json "${FLOOD_ARG[@]}"
 done
 
 python3 pipeline/write_manifest.py "$OUT"

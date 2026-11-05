@@ -1,15 +1,12 @@
 {
+  "about": "Downloadable map packs. Phase 1 = Houston metro only. Later phases add packs here (a Texas state pack, then US state packs) without changing the app: each pack is built and downloaded on its own.",
   "areas": [
     {
-      "id": "nw-houston",
-      "name": "Home area: NW Houston (77088) to Downtown & Medical Center",
-      "bbox": [-95.62, 29.68, -95.28, 29.98],
-      "maxzoom": 15
-    },
-    {
       "id": "houston-metro",
-      "name": "Greater Houston (Harris County and around)",
-      "bbox": [-95.97, 29.48, -94.90, 30.20],
+      "name": "Houston metro (all of Houston and Harris County, plus nearby suburbs)",
+      "kind": "metro",
+      "region": "TX",
+      "bbox": [-96.00, 29.40, -94.85, 30.25],
       "maxzoom": 14
     }
   ]

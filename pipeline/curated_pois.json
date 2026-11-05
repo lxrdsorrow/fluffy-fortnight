@@ -1,0 +1,68 @@
+{
+  "about": "Survival locations scouted 2026-11-05 by the Scouting Agent from place-search results with real addresses. Entries without coordinates are placed by matching their address/name in the OpenStreetMap data at build time; if no match is found they are left out and reported (never guessed). Opening hours are deliberately NOT stored: the app must never suggest a place is open or closed. Left out on purpose: PVE Pharmacy and Unique Drugs (listed temporarily closed), Foodarama and Aldi (scout said verify first).",
+  "pois": [
+    {"cat": "hospital", "name": "Doctors Hospital Tidwell", "addr": "510 W Tidwell Rd", "pc": "77091", "phone": "(281) 618-8500"},
+    {"cat": "hospital", "name": "Houston Methodist Willowbrook Hospital", "addr": "18220 State Highway 249", "pc": "77070", "phone": "(281) 737-1000", "lat": 29.967458, "lon": -95.550669, "note": "Hospital with emergency room"},
+    {"cat": "hospital", "name": "Memorial Hermann Memorial City Hospital", "addr": "921 Gessner Rd", "pc": "77024", "phone": "(713) 242-3000", "lat": 29.781102, "lon": -95.545703},
+    {"cat": "hospital", "name": "Kindred Hospital North Houston", "addr": "7407 North Fwy", "pc": "77037", "phone": "(832) 200-6000", "lat": 29.867391, "lon": -95.407762},
+    {"cat": "hospital", "name": "Memorial Hermann Texas Medical Center", "addr": "6411 Fannin St", "pc": "77030", "phone": "(713) 704-4000", "lat": 29.713758, "lon": -95.394462, "note": "Emergency room, Level 1 trauma center"},
+    {"cat": "hospital", "name": "Ben Taub Hospital", "addr": "1504 Taub Loop", "pc": "77030", "phone": "(713) 873-2000", "note": "Public hospital, emergency room, Level 1 trauma center"},
+    {"cat": "hospital", "name": "Houston Methodist Hospital", "addr": "6565 Fannin St", "pc": "77030", "phone": "(713) 790-3311", "note": "Hospital with emergency room"},
+    {"cat": "hospital", "name": "Baylor St. Luke's Medical Center", "addr": "1101 Bates Ave", "pc": "77030"},
+    {"cat": "hospital", "name": "LBJ Hospital", "addr": "5656 Kelley St", "pc": "77026", "note": "Hospital with emergency room"},
+    {"cat": "hospital", "name": "HCA Houston Healthcare Northwest", "addr": "710 Cypress Creek Pkwy", "pc": "77090", "phone": "(281) 440-1000", "lat": 30.020781, "lon": -95.442637},
+    {"cat": "hospital", "name": "Memorial Hermann Greater Heights Hospital", "addr": "1635 North Loop W", "pc": "77008", "phone": "(713) 867-2000", "note": "Hospital with emergency room"},
+    {"cat": "hospital", "name": "St. Joseph Medical Center", "addr": "1401 St Joseph Pkwy", "pc": "77002", "phone": "(713) 757-1000", "note": "ER phone (713) 757-7557"},
+
+    {"cat": "clinic", "name": "Specialty Care Clinics - Houston", "addr": "8511 N Houston Rosslyn Rd, Suite 220", "pc": "77088", "phone": "(281) 741-3204", "lat": 29.868905, "lon": -95.490168, "note": "Urgent care"},
+    {"cat": "clinic", "name": "Trinity Urgent Care", "addr": "8300 Antoine Dr, Suite D", "pc": "77088", "phone": "(281) 925-7547", "lat": 29.890045, "lon": -95.476746, "note": "Urgent care"},
+    {"cat": "clinic", "name": "AFC Urgent Care Antoine West", "addr": "6405 West Rd, Suite 250", "pc": "77040", "phone": "(832) 378-8993", "lat": 29.912509, "lon": -95.483518, "note": "Urgent care"},
+    {"cat": "clinic", "name": "UT Physicians Multispecialty - Victory", "addr": "7364 Antoine Dr", "pc": "77088", "phone": "(713) 486-7350", "lat": 29.868012, "lon": -95.471145, "note": "Medical clinic"},
+    {"cat": "clinic", "name": "Clinica Hispana Antoine", "addr": "6606 Antoine Dr", "pc": "77088", "phone": "(832) 831-5114", "lat": 29.861368, "lon": -95.473067, "note": "Family medicine"},
+    {"cat": "clinic", "name": "Brazos Urgent Care", "addr": "6306 Fairbanks N Houston Rd", "pc": "77040", "phone": "(832) 831-9094", "lat": 29.858097, "lon": -95.523941, "note": "Urgent care"},
+    {"cat": "clinic", "name": "The Harris Center NeuroPsychiatric Center", "addr": "1502 Taub Loop", "pc": "77030", "phone": "Crisis line (713) 970-7000, option 1", "note": "Mental health crisis center, next to Ben Taub. You can also call or text 988 (Suicide & Crisis Lifeline). Call 911 for life-threatening emergencies."},
+
+    {"cat": "pharmacy", "name": "Walgreens Pharmacy", "addr": "6486 W Little York Rd", "pc": "77091", "phone": "(713) 957-8185", "lat": 29.866837, "lon": -95.486545},
+    {"cat": "pharmacy", "name": "CVS Pharmacy", "addr": "6504 W Little York Rd", "pc": "77040", "phone": "(713) 937-9600", "lat": 29.866765, "lon": -95.487969},
+    {"cat": "pharmacy", "name": "CVS Pharmacy", "addr": "5212 Antoine Dr", "pc": "77092", "phone": "(713) 682-2533", "lat": 29.840578, "lon": -95.472556},
+    {"cat": "pharmacy", "name": "Rx Perts", "addr": "7320 Antoine Dr", "pc": "77088", "phone": "(281) 741-8121", "lat": 29.868174, "lon": -95.472381},
+    {"cat": "pharmacy", "name": "Kroger Pharmacy (Antoine Town Center)", "addr": "12434 State Highway 249", "pc": "77086", "phone": "(281) 272-0050", "lat": 29.912153, "lon": -95.478011, "note": "Inside Kroger"},
+
+    {"cat": "police", "name": "Houston Police Department - North Patrol Station", "addr": "9455 W Montgomery Rd", "pc": "77088", "phone": "(832) 394-3800", "lat": 29.879548, "lon": -95.446551},
+    {"cat": "fire", "name": "Houston Fire Department Station 4", "addr": "6530 W Little York Rd", "pc": "77088", "phone": "(832) 394-6700", "lat": 29.866267, "lon": -95.489624},
+    {"cat": "fire", "name": "Houston Fire Station 50", "addr": "4420 Bingle Rd", "pc": "77092", "phone": "(713) 895-7121", "lat": 29.834512, "lon": -95.489956},
+    {"cat": "fire", "name": "Houston Fire Station 67", "addr": "1616 W Little York Rd", "pc": "77088", "phone": "(832) 394-6700", "lat": 29.863702, "lon": -95.436093},
+    {"cat": "fire", "name": "Northwest Volunteer Fire Department", "addr": "2950 Washington Dr", "pc": "77092", "phone": "(281) 448-4084", "lat": 29.900303, "lon": -95.46161},
+    {"cat": "emergency", "name": "Harris County Emergency Management (ReadyHarris)", "addr": "6922 Old Katy Rd", "pc": "77024", "phone": "(713) 881-3100", "lat": 29.78253, "lon": -95.440989, "note": "County emergency management office"},
+
+    {"cat": "shelter", "name": "1960 Hope Center (Hope Center Houston)", "addr": "821 Peakwood Dr", "pc": "77090", "phone": "(832) 965-5511", "lat": 30.020213, "lon": -95.445231, "note": "Day shelter: meals, showers, laundry, clothing, medical/dental, social services. Daytime only."},
+    {"cat": "shelter", "name": "Star of Hope - Men's Development Center", "addr": "1811 Ruiz St", "pc": "77002", "phone": "(713) 227-8900", "lat": 29.760473, "lon": -95.351611, "note": "Emergency shelter for men. Call ahead; beds fill fast."},
+    {"cat": "shelter", "name": "Salvation Army Center of Hope", "addr": "1500 Austin St", "pc": "77002", "note": "Emergency shelter. (Not the Salvation Army area office at 2407 N Main St.)"},
+    {"cat": "shelter", "name": "Harmony House", "addr": "702 Girard St", "pc": "77002", "phone": "(713) 221-6216", "lat": 29.767671, "lon": -95.364404, "note": "Housing / homeless shelter, TB care"},
+
+    {"cat": "grocery", "name": "Food Town", "addr": "6470 W Little York Rd", "pc": "77091", "phone": "(713) 466-8070", "lat": 29.866841, "lon": -95.485879},
+    {"cat": "grocery", "name": "Kroger - Antoine Town Center", "addr": "12434 State Highway 249", "pc": "77086", "phone": "(281) 272-0005", "lat": 29.912303, "lon": -95.477828, "note": "Grocery with pharmacy and fuel center"},
+    {"cat": "grocery", "name": "Walmart Supercenter", "addr": "13003 State Highway 249", "pc": "77086", "phone": "(281) 668-2952", "lat": 29.913117, "lon": -95.486799, "note": "Grocery and general store, has a fuel station"},
+    {"cat": "grocery", "name": "H-E-B The Heights", "addr": "2300 N Shepherd Dr", "pc": "77008", "phone": "(713) 802-8100", "lat": 29.807159, "lon": -95.408899},
+    {"cat": "grocery", "name": "H-E-B Montrose Market", "addr": "1701 W Alabama St", "pc": "77098", "phone": "(713) 529-2475", "lat": 29.737746, "lon": -95.402608, "note": "Has a pharmacy"},
+    {"cat": "grocery", "name": "H-E-B Buffalo Market", "addr": "5225 Buffalo Speedway", "pc": "77005", "phone": "(713) 218-1800", "lat": 29.726786, "lon": -95.427143, "note": "Has a pharmacy"},
+    {"cat": "grocery", "name": "H-E-B Meyerland Market", "addr": "4955 Beechnut St", "pc": "77096", "phone": "(713) 662-4000", "lat": 29.688872, "lon": -95.464269},
+    {"cat": "grocery", "name": "H-E-B San Felipe", "addr": "5895 San Felipe St", "pc": "77057", "phone": "(713) 278-8450", "lat": 29.748015, "lon": -95.485035, "note": "Has a pharmacy"},
+    {"cat": "grocery", "name": "H-E-B Gulfgate", "addr": "3111 Woodridge Dr", "pc": "77087", "phone": "(713) 847-0025", "lat": 29.698456, "lon": -95.29491, "note": "Has a pharmacy"},
+    {"cat": "grocery", "name": "H-E-B Washington Ave", "addr": "3663 Washington Ave, Suite 100", "pc": "77007", "phone": "(832) 673-3100", "lat": 29.768861, "lon": -95.396524},
+
+    {"cat": "foodbank", "name": "Houston Food Bank", "addr": "535 Portwall St", "pc": "77029", "phone": "(713) 223-3700; Need Food helpline (832) 369-9390", "lat": 29.780499, "lon": -95.274202, "note": "Main hub serving partner pantries, not a walk-in pantry for most people."},
+    {"cat": "foodbank", "name": "Emergency Aid Coalition", "addr": "5401 Fannin St", "pc": "77004", "phone": "(713) 528-3663", "lat": 29.726407, "lon": -95.387467},
+    {"cat": "foodbank", "name": "Anderson Food Pantry", "addr": "1508 Gregg St", "pc": "77020"},
+
+    {"cat": "fuel", "name": "Super K", "addr": "6100 W Little York Rd", "pc": "77088", "phone": "(713) 896-9676", "lat": 29.866209, "lon": -95.480604},
+    {"cat": "fuel", "name": "Home Run Gas Station", "addr": "6310 W Little York Rd", "pc": "77088", "lat": 29.866101, "lon": -95.483093},
+    {"cat": "fuel", "name": "Shell", "addr": "4540 W Little York Rd", "pc": "77088", "phone": "(281) 447-2526", "lat": 29.863529, "lon": -95.472979},
+    {"cat": "fuel", "name": "Sunoco", "addr": "8415 N Houston Rosslyn Rd", "pc": "77088", "phone": "(832) 735-7475", "lat": 29.868027, "lon": -95.488921},
+    {"cat": "fuel", "name": "Exxon", "addr": "8398 N Houston Rosslyn Rd", "pc": "77088", "phone": "(713) 478-2193", "lat": 29.8677, "lon": -95.487825},
+    {"cat": "fuel", "name": "Exxon", "addr": "3405 W Little York Rd", "pc": "77088", "phone": "(713) 688-3100", "lat": 29.863347, "lon": -95.45924},
+    {"cat": "fuel", "name": "Chevron", "addr": "9435 N Houston Rosslyn Rd", "pc": "77088", "phone": "(713) 983-8006", "lat": 29.877599, "lon": -95.494669},
+    {"cat": "fuel", "name": "Citgo", "addr": "5805 Pinemont Dr", "pc": "77092", "phone": "(281) 222-9491", "lat": 29.840794, "lon": -95.473579},
+    {"cat": "fuel", "name": "Kroger Fuel Center", "addr": "12434 Tomball Pkwy", "pc": "77086", "lat": 29.912865, "lon": -95.479182}
+  ]
+}

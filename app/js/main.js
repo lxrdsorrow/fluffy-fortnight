@@ -2,7 +2,7 @@
 import * as areas from './areas.js';
 import { openSearch, search } from './search.js';
 import { loadRoads, getRoute, miles, aboutTime, clockAt, bearingDeg, compassWord, metersBetween, FLOOD_WORDS } from './routing.js';
-import { saved, pins, settings, checklist, SAVED_TYPES, PIN_TYPES } from './places.js';
+import { saved, pins, trails, settings, checklist, SAVED_TYPES, PIN_TYPES } from './places.js';
 import { GUIDE, CHECKLIST, DISCLAIMER } from './guide.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -20,8 +20,21 @@ const CATS = {
   pharmacy: { label: 'Pharmacy', icon: '💊' },
   police: { label: 'Police', icon: '🚓' },
   fire: { label: 'Fire station', icon: '🚒' },
-  grocery: { label: 'Grocery', icon: '🛒' },
+  grocery: { label: 'Food / grocery', icon: '🛒' },
   fuel: { label: 'Gas station', icon: '⛽' },
+  foodbank: { label: 'Food bank / pantry', icon: '🥫', hidden: true },
+  emergency: { label: 'Emergency management', icon: '🚨', hidden: true },
+};
+
+// Map toggles (each turns one kind of survival place on/off on the map)
+const GROUPS = {
+  hospital: { label: 'Hospital', icon: '🏥', cats: ['hospital', 'clinic'], color: '#d32f2f' },
+  shelter: { label: 'Shelter', icon: '🏠', cats: ['shelter', 'community'], color: '#7b1fa2' },
+  water: { label: 'Water', icon: '💧', cats: ['water'], color: '#0288d1' },
+  food: { label: 'Food', icon: '🛒', cats: ['grocery', 'foodbank'], color: '#2e7d32' },
+  gas: { label: 'Gas', icon: '⛽', cats: ['fuel'], color: '#ef6c00' },
+  pharmacy: { label: 'Pharmacy', icon: '💊', cats: ['pharmacy'], color: '#00897b' },
+  safety: { label: 'Police / Fire', icon: '🚒', cats: ['police', 'fire', 'emergency'], color: '#283593' },
 };
 
 const state = {
@@ -81,6 +94,21 @@ function addOverlays() {
   map.addSource('spots', { type: 'geojson', data: empty });
   map.addLayer({ id: 'spots', type: 'circle', source: 'spots',
     paint: { 'circle-radius': 8, 'circle-color': '#ffb300', 'circle-stroke-color': '#6b4b00', 'circle-stroke-width': 2 } });
+  map.addSource('trail', { type: 'geojson', data: empty });
+  map.addLayer({ id: 'trail-line', type: 'line', source: 'trail', filter: ['==', ['get', 'part'], 'line'],
+    layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ff6d00', 'line-width': 4, 'line-dasharray': [2, 1] } });
+  map.addLayer({ id: 'trail-start', type: 'circle', source: 'trail', filter: ['==', ['get', 'part'], 'start'],
+    paint: { 'circle-radius': 7, 'circle-color': '#ff6d00', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+  map.addLayer({ id: 'route-stops', type: 'circle', source: 'route', filter: ['==', ['get', 'part'], 'stop'],
+    paint: { 'circle-radius': 8, 'circle-color': '#ffa000', 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 } });
+  map.addSource('allpois', { type: 'geojson', data: poiFeatures() });
+  const lf = ['in', ['get', 'group'], ['literal', enabledLayers()]];
+  map.addLayer({ id: 'allpois', type: 'circle', source: 'allpois', filter: lf,
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 4, 15, 8], 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } });
+  map.addLayer({ id: 'allpois-label', type: 'symbol', source: 'allpois', filter: lf, minzoom: 13,
+    layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 12, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 9 },
+    paint: { 'text-color': dark ? '#e8edf2' : '#16202a', 'text-halo-color': dark ? '#0b1420' : '#ffffff', 'text-halo-width': 1.5 } });
+  drawTrail();
   map.addSource('pois', { type: 'geojson', data: empty });
   map.addLayer({ id: 'pois', type: 'circle', source: 'pois',
     paint: { 'circle-radius': 7, 'circle-color': '#c62828', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
@@ -99,8 +127,11 @@ async function setupMap() {
   state.map.touchZoomRotate.disableRotation();
   state.map.on('style.load', addOverlays);
   state.map.on('click', (e) => {
-    const f = state.map.queryRenderedFeatures(e.point, { layers: ['pois', 'spots'].filter((l) => state.map.getLayer(l)) })[0];
-    if (f && f.layer.id === 'pois') return showPlace(JSON.parse(f.properties.place));
+    const f = state.map.queryRenderedFeatures(e.point, { layers: ['pois', 'spots', 'allpois'].filter((l) => state.map.getLayer(l)) })[0];
+    if (f && (f.layer.id === 'pois' || f.layer.id === 'allpois')) {
+      const pl = JSON.parse(f.properties.place);
+      return showPlace(pl.sub !== undefined ? pl : poiPlace(pl));
+    }
     if (f && f.layer.id === 'spots') return showSheet('Flood-prone spot', `<p>${esc(f.properties.text)}</p><p class="note">Based on floodplain maps and road shape, not a live flood report. It cannot tell if the road is flooded now.</p>`);
     showPlace({ label: 'Dropped pin', sub: `${e.lngLat.lat.toFixed(5)}, ${e.lngLat.lng.toFixed(5)}`, lon: e.lngLat.lng, lat: e.lngLat.lat, dropped: true });
   });
@@ -162,12 +193,16 @@ function startGps() {
   stopGps();
   if (!navigator.geolocation) { state.gpsError = 'This device has no location support.'; return setStatus(); }
   const ok = (pos) => {
-    state.me = { lon: pos.coords.longitude, lat: pos.coords.latitude, acc: pos.coords.accuracy, t: pos.timestamp };
-    if (pos.coords.heading != null && !Number.isNaN(pos.coords.heading) && pos.coords.speed > 1) state.heading = pos.coords.heading;
+    state.me = { lon: pos.coords.longitude, lat: pos.coords.latitude, acc: pos.coords.accuracy, t: pos.timestamp,
+      speed: pos.coords.speed, alt: pos.coords.altitude };
+    if (pos.coords.heading != null && !Number.isNaN(pos.coords.heading) && pos.coords.speed > 1 && state.headingSrc !== 'compass') {
+      state.heading = pos.coords.heading; state.headingSrc = 'gps';
+    }
+    recordPoint(state.me);
     state.gpsError = null;
     setMarker('me', [state.me.lon, state.me.lat], 'me');
     setStatus();
-    if ($('#sheet').dataset.view === 'help') renderHelp();
+    if ($('#sheet').dataset.view === 'dash') renderDash();
   };
   const bad = (err) => { state.gpsError = err.message || 'Location unavailable'; setStatus(); };
   if (settings.get().battery) {
@@ -268,7 +303,8 @@ function showPlace(p, extraHtml = '') {
   const body = showSheet(p.label, `
     ${p.approx ? '<div class="note">Closest match — not an exact match for what you typed. Check before you go.</div>' : ''}
     <div>${esc(p.sub || '')}</div>
-    <div class="muted small">${esc(distanceLine(p))}</div>
+    ${p.note ? `<div class="small">${esc(p.note)}</div>` : ''}
+    <div class="muted small">${esc(distanceLine(p))}${p.src === 'scouted' ? ' · scouted location' : ''}</div>
     ${extraHtml}
     <button class="primary big" data-a="go">Directions</button>
     <div class="row">
@@ -289,10 +325,11 @@ function showPlace(p, extraHtml = '') {
 const endpoint = (p) => ({ label: p.label, lon: p.lon, lat: p.lat });
 const MY_LOCATION = { label: 'My location (GPS)', gps: true };
 
-// ------------------------------------------------------------------ directions
+// ------------------------------------------------------------------ directions (with stops / waypoints)
 function openDirections({ from, to, run } = {}) {
   if (from) state.dir.from = from;
   if (to) state.dir.to = to;
+  if (!state.dir.stops) state.dir.stops = [];
   if (!state.dir.from) state.dir.from = MY_LOCATION;
   if (!state.dir.to && state.selected) state.dir.to = endpoint(state.selected);
   renderDirections();
@@ -300,7 +337,7 @@ function openDirections({ from, to, run } = {}) {
 }
 
 function endpointChips() {
-  return `<button data-pick="gps">📍 My location</button>` + saved.all().map((s) =>
+  return `<button data-pick="gps">📍 My location</button><button data-pick="center">✛ Map center</button>` + saved.all().map((s) =>
     `<button data-pick="saved" data-id="${s.id}">⭐ ${esc(s.name)}</button>`).join('');
 }
 
@@ -311,6 +348,12 @@ function renderDirections() {
       <input id="dfrom" type="search" value="${esc(d.from ? d.from.label : '')}" placeholder="My location, or type an address">
       <div class="suggest" id="dfrom-s" hidden></div>
       <div class="chips" data-for="from">${endpointChips()}</div></div>
+    ${d.stops.map((s, i) => `<div class="stop"><span>🔸 Stop ${i + 1}: ${esc(s.label)}</span><button class="icon" data-delstop="${i}" aria-label="Remove stop ${i + 1}">✕</button></div>`).join('')}
+    <div class="field" id="addstop-field" hidden><label>Add a stop (waypoint)</label>
+      <input id="dstop" type="search" placeholder="Type an address or place for the stop">
+      <div class="suggest" id="dstop-s" hidden></div>
+      <div class="chips" data-for="stop">${endpointChips()}</div></div>
+    <button id="addstop">+ Add stop on the way</button>
     <div class="field"><label>To (Point B)</label>
       <input id="dto" type="search" value="${esc(d.to ? d.to.label : '')}" placeholder="Type an address or place">
       <div class="suggest" id="dto-s" hidden></div>
@@ -324,19 +367,28 @@ function renderDirections() {
     <button class="primary big" id="dgo">Get route</button>
     <div id="dres"></div>`, 'directions');
   state.sheetRender = renderDirections;
+  const addStop = (ep) => { d.stops.push(ep); renderDirections(); runRoute(); };
   attachSearch($('#dfrom'), $('#dfrom-s'), (r) => { d.from = endpoint(r); $('#dfrom').value = r.label; runRoute(); });
   attachSearch($('#dto'), $('#dto-s'), (r) => { d.to = endpoint(r); $('#dto').value = r.label; runRoute(); });
+  attachSearch($('#dstop'), $('#dstop-s'), (r) => addStop(endpoint(r)));
   body.addEventListener('click', (e) => {
     const m = e.target.closest('[data-mode]');
     if (m) { d.mode = m.dataset.mode; settings.set({ mode: d.mode }); body.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', b === m)); runRoute(); }
     const c = e.target.closest('[data-pick]');
     if (c) {
       const which = c.parentElement.dataset.for;
-      const ep = c.dataset.pick === 'gps' ? MY_LOCATION : endpoint(nameSaved(saved.all().find((s) => s.id === c.dataset.id)));
+      let ep;
+      if (c.dataset.pick === 'gps') ep = MY_LOCATION;
+      else if (c.dataset.pick === 'center') { const mc = state.map.getCenter(); ep = { label: 'Map center', lon: mc.lng, lat: mc.lat }; }
+      else ep = nameSaved(saved.all().find((s) => s.id === c.dataset.id));
+      if (which === 'stop') return addStop(ep);
       d[which] = ep;
       $(which === 'from' ? '#dfrom' : '#dto').value = ep.label;
       runRoute();
     }
+    const ds = e.target.closest('[data-delstop]');
+    if (ds) { d.stops.splice(+ds.dataset.delstop, 1); renderDirections(); runRoute(); }
+    if (e.target.id === 'addstop') { $('#addstop-field').hidden = false; e.target.hidden = true; $('#dstop').focus(); }
     if (e.target.id === 'dgo') runRoute();
   });
   $('#avoidflood').onchange = (e) => { settings.set({ avoidFlood: e.target.checked }); runRoute(); };
@@ -349,14 +401,36 @@ function resolve(ep) {
   return [ep.lon, ep.lat];
 }
 
+// Join the legs A → stop 1 → stop 2 → … → B into one route.
+function combineLegs(legs, stopLabels) {
+  if (legs.length === 1) return { ...legs[0], gaps: [[legs[0].from, legs[0].coords[0], legs[0].gapStart], [legs[0].coords.at(-1), legs[0].to, legs[0].gapEnd]], stopsAt: [] };
+  const r = { ok: true, mode: legs[0].mode, coords: [], dist: 0, time: 0, steps: [], flood: { spots: [], counts: {} }, gaps: [], stopsAt: [],
+    from: legs[0].from, to: legs.at(-1).to, gapStart: legs[0].gapStart, gapEnd: legs.at(-1).gapEnd };
+  legs.forEach((l, i) => {
+    r.coords.push(...l.coords);
+    r.dist += l.dist; r.time += l.time;
+    const steps = l.steps.slice();
+    if (i < legs.length - 1) { steps[steps.length - 1] = { text: `Arrive at stop ${i + 1}: ${stopLabels[i]}`, dist: 0, time: 0 }; r.stopsAt.push(l.to); }
+    r.steps.push(...steps);
+    r.flood.spots.push(...l.flood.spots);
+    for (const [k, v] of Object.entries(l.flood.counts)) r.flood.counts[k] = (r.flood.counts[k] || 0) + v;
+    r.gaps.push([l.from, l.coords[0], l.gapStart], [l.coords.at(-1), l.to, l.gapEnd]);
+  });
+  if (legs.some((l) => l.alt && l.alt.picked === 'safer')) {
+    r.alt = { picked: 'safer', fastestTime: legs.reduce((t, l) => t + (l.alt && l.alt.picked === 'safer' ? l.alt.fastestTime : l.time), 0) };
+  } else if (legs.some((l) => l.alt)) r.alt = { picked: 'fastest', saferTime: null };
+  return r;
+}
+
 async function runRoute() {
   const res = $('#dres');
   if (!res) return;
   const d = state.dir;
   if (!state.area) { res.innerHTML = '<div class="note">Download a map area first (More → Map areas).</div>'; return; }
   if (!d.to) { res.innerHTML = '<p class="muted">Pick where you want to go.</p>'; return; }
-  const from = resolve(d.from), to = resolve(d.to);
-  if (!from || !to) {
+  const eps = [d.from, ...(d.stops || []), d.to];
+  const pts = eps.map(resolve);
+  if (pts.some((p) => !p)) {
     res.innerHTML = `<div class="note">Waiting for a GPS fix. GPS works without internet — it may take a minute, best outside or near a window.
       ${state.gpsError ? '<br>(' + esc(state.gpsError) + ')' : ''}</div>
       <button class="big" id="usecenter">Start from the map center instead</button>`;
@@ -365,13 +439,20 @@ async function runRoute() {
   }
   res.innerHTML = '<p class="muted">Finding a route…</p>';
   const avoid = settings.get().avoidFlood;
-  const r = await getRoute(from, to, d.mode, avoid, pins.blockedPoints());
-  if (!$('#dres')) return;
-  if (!r.ok) {
-    state.route = null; drawRoute(null);
-    res.innerHTML = `<div class="note"><b>No route.</b> ${esc(r.reason)}</div>`;
-    return;
+  const legs = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const r = await getRoute(pts[i], pts[i + 1], d.mode, avoid, pins.blockedPoints());
+    if (!$('#dres')) return;
+    if (!r.ok) {
+      state.route = null; drawRoute(null);
+      const leg = pts.length > 2 ? ` (part ${i + 1}: ${esc(eps[i].label)} → ${esc(eps[i + 1].label)})` : '';
+      res.innerHTML = `<div class="note"><b>No route${leg}.</b> ${esc(r.reason)}</div>`;
+      return;
+    }
+    legs.push(r);
   }
+  const r = combineLegs(legs, (d.stops || []).map((s) => s.label));
+  r.toLabel = d.to.label;
   state.route = r;
   drawRoute(r, true);
   res.innerHTML = routeHtml(r);
@@ -379,7 +460,7 @@ async function runRoute() {
 
 function routeHtml(r) {
   const modeWord = { car: 'driving', foot: 'walking', bike: 'biking' }[r.mode];
-  const extra = (r.gapStart > 50 ? r.gapStart : 0) + (r.gapEnd > 50 ? r.gapEnd : 0);
+  const extra = r.gaps.reduce((n, g) => n + (g[2] > 50 ? g[2] : 0), 0);
   let flood = '';
   const spots = r.flood.spots;
   if (spots.length) {
@@ -393,14 +474,14 @@ function routeHtml(r) {
     flood = '<p class="small muted">Flood map data is not in this download, so flood-prone roads cannot be flagged.</p>';
   }
   let alt = '';
-  if (r.alt && r.alt.picked === 'safer') alt = `<p class="small">Chose a route that avoids more flood-prone spots. It is ${aboutTime(r.time - r.alt.fastestTime).replace('about ', 'about ')} longer than the fastest route.</p>`;
+  if (r.alt && r.alt.picked === 'safer') alt = `<p class="small">Chose a route that avoids more flood-prone spots. It is ${aboutTime(r.time - r.alt.fastestTime)} longer than the fastest route.</p>`;
   if (r.alt && r.alt.picked === 'fastest' && r.alt.saferTime == null) alt = '<p class="small">No nearby route with fewer flood-prone spots was found.</p>';
   if (r.alt && r.alt.picked === 'fastest' && r.alt.saferTime != null) alt = `<p class="small">A route with fewer flood-prone spots exists but takes ${aboutTime(r.alt.saferTime)} — much longer — so the faster one is shown.</p>`;
   return `
     <div class="eta" id="eta">${aboutTime(r.time)}</div>
-    <div>${miles(r.dist)} · ${modeWord} · arrive around ${clockAt(r.time)} (estimate)</div>
-    <p class="small muted" id="eta-note">${ETA_NOTE}</p>
-    ${extra > 0 ? `<p class="small muted">The dotted line (${miles(extra)}) from your points to the nearest road is not counted in the time.</p>` : ''}
+    <div>${miles(r.dist)} · ${modeWord}${r.stopsAt.length ? ` · ${r.stopsAt.length} stop${r.stopsAt.length > 1 ? 's' : ''}` : ''} · arrive around ${clockAt(r.time)} (estimate)</div>
+    <p class="small muted" id="eta-note">${ETA_NOTE}${r.stopsAt.length ? ' Time spent at stops is not included.' : ''}</p>
+    ${extra > 0 ? `<p class="small muted">The dotted lines (${miles(extra)}) from your points to the nearest road are not counted in the time.</p>` : ''}
     ${flood}${alt}
     <ol class="steps">${r.steps.map((s) => `<li>${esc(s.text)}${s.dist ? ` <span class="muted small">— ${miles(s.dist)}</span>` : ''}</li>`).join('')}</ol>`;
 }
@@ -411,26 +492,34 @@ function drawRoute(r, fit) {
   if (!src) return;
   if (!r) { src.setData({ type: 'FeatureCollection', features: [] }); spots.setData({ type: 'FeatureCollection', features: [] }); return; }
   const feats = [{ type: 'Feature', properties: { part: 'main' }, geometry: { type: 'LineString', coordinates: r.coords } }];
-  if (r.gapStart > 5) feats.push({ type: 'Feature', properties: { part: 'gap' }, geometry: { type: 'LineString', coordinates: [r.from, r.coords[0]] } });
-  if (r.gapEnd > 5) feats.push({ type: 'Feature', properties: { part: 'gap' }, geometry: { type: 'LineString', coordinates: [r.coords[r.coords.length - 1], r.to] } });
+  for (const [a, b, d] of r.gaps) if (d > 5) feats.push({ type: 'Feature', properties: { part: 'gap' }, geometry: { type: 'LineString', coordinates: [a, b] } });
+  for (const s of r.stopsAt) feats.push({ type: 'Feature', properties: { part: 'stop' }, geometry: { type: 'Point', coordinates: s } });
   src.setData({ type: 'FeatureCollection', features: feats });
   spots.setData({ type: 'FeatureCollection', features: r.flood.spots.map((s) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
     properties: { text: `${s.road}: ${s.kinds.map((k) => FLOOD_WORDS[k]).join('; ')}` } })) });
+  // distance along the route, for "remaining distance" on the dashboard
+  r.cum = [0];
+  for (let i = 1; i < r.coords.length; i++) r.cum.push(r.cum[i - 1] + metersBetween(r.coords[i - 1], r.coords[i]));
   if (fit) {
     const b = new maplibregl.LngLatBounds();
     r.coords.forEach((c) => b.extend(c)); b.extend(r.from); b.extend(r.to);
-    state.map.fitBounds(b, { padding: { top: 90, bottom: Math.round(innerHeight * 0.5), left: 30, right: 30 }, duration: settings.get().battery ? 0 : 600, maxZoom: 16 });
+    state.map.fitBounds(b, { padding: { top: 120, bottom: Math.round(innerHeight * 0.5), left: 30, right: 30 }, duration: settings.get().battery ? 0 : 600, maxZoom: 16 });
   }
 }
 
-// ------------------------------------------------------------------ nearest essentials
+// ------------------------------------------------------------------ nearest essentials + map toggles
 function nearest(cats, n = 5) {
   const o = origin();
   return state.pois.filter((p) => cats.includes(p.cat))
     .map((p) => ({ ...p, d: metersBetween([o.lon, o.lat], [p.lon, p.lat]), b: bearingDeg([o.lon, o.lat], [p.lon, p.lat]) }))
     .sort((a, b) => a.d - b.d).slice(0, n);
 }
-const poiPlace = (p) => ({ label: p.name, sub: [CATS[p.cat]?.label || (p.cat === 'community' ? 'Community center' : ''), p.addr, p.pc && 'TX ' + p.pc, p.phone && 'Phone: ' + p.phone].filter(Boolean).join(', '), lon: p.lon, lat: p.lat, cat: p.cat });
+const catLabel = (c) => (CATS[c] ? CATS[c].label : c === 'community' ? 'Community center' : '');
+const poiPlace = (p) => ({
+  label: p.name,
+  sub: [catLabel(p.cat), p.addr, p.pc && 'TX ' + p.pc, p.phone && 'Phone: ' + p.phone].filter(Boolean).join(', '),
+  note: p.note || '', src: p.src, lon: p.lon, lat: p.lat, cat: p.cat,
+});
 
 function nearestOne(cat) {
   if (!state.area) return openAreas();
@@ -438,14 +527,20 @@ function nearestOne(cat) {
   let warn = '';
   if (cat === 'shelter') {
     cats = ['shelter', 'community'];
-    warn = '<div class="note">Official shelters open only during emergencies and change each time. This shows mapped shelters and community centers that are often used as shelters or cooling centers — not confirmed open. Listen to local radio for official shelter news.</div>';
+    warn = '<div class="note">Official emergency shelters open only during disasters and change each time. This shows mapped shelters and community centers that are often used as shelters or cooling centers — not confirmed open or with space. Listen to local radio for official shelter news.</div>';
   }
-  const list = nearest(cats, 6);
+  if (cat === 'grocery') cats = ['grocery', 'foodbank'];
+  if (cat === 'fire') cats = ['fire', 'police', 'emergency'];
+  let list = nearest(cats, 6);
+  if (cat === 'water' && !list.length) {
+    list = nearest(['grocery'], 6);
+    warn = '<div class="note">No public drinking-water point is mapped near here. Grocery stores are the most practical places to get water — the app cannot know if they are open or have water.</div>';
+  }
   if (!list.length) return showSheet('Nearest ' + CATS[cat].label.toLowerCase(), `<div class="note">None found in the downloaded map area.</div>`);
   showPois(list);
   const first = list[0];
   const o = origin();
-  const more = list.slice(1).map((p, i) => `<li><div>${esc(p.name)}<div class="muted small">${miles(p.d)} ${compassWord(p.b)}${p.cat === 'community' ? ' · community center' : ''}</div></div><button data-i="${i + 1}">Show</button></li>`).join('');
+  const more = list.slice(1).map((p, i) => `<li><div>${esc(p.name)}<div class="muted small">${miles(p.d)} ${compassWord(p.b)} · ${esc(catLabel(p.cat))}</div></div><button data-i="${i + 1}">Show</button></li>`).join('');
   showPlace(poiPlace(first), `
     <p><b>Nearest ${esc(CATS[cat].label.toLowerCase())}: ${miles(first.d)}, ${compassWord(first.b)}</b> of ${esc(o.label)} (straight line).</p>${warn}
     ${more ? `<details><summary>More nearby (${list.length - 1})</summary><ul class="list" id="morelist">${more}</ul></details>` : ''}`);
@@ -456,17 +551,47 @@ function nearestOne(cat) {
 function openEssentials() {
   const body = showSheet('Nearest essentials', `
     <p class="small muted">Distances are from ${esc(origin().label)}. Places come from the downloaded map — ${NOT_LIVE}</p>
-    <div class="grid">${Object.entries(CATS).map(([k, c]) => `<button data-cat="${k}">${c.icon} ${c.label}</button>`).join('')}</div>`, 'essentials', true);
+    <div class="grid">${Object.entries(CATS).filter(([k]) => !CATS[k].hidden).map(([k, c]) => `<button data-cat="${k}">${c.icon} ${c.label}</button>`).join('')}</div>`, 'essentials', true);
   body.onclick = (e) => { const b = e.target.closest('[data-cat]'); if (b) nearestOne(b.dataset.cat); };
 }
 
-// ------------------------------------------------------------------ help nearby + compass
+// map toggles: show / hide each kind of survival place
+function groupOf(cat) { return Object.keys(GROUPS).find((g) => GROUPS[g].cats.includes(cat)); }
+function poiFeatures() {
+  return { type: 'FeatureCollection', features: state.pois.map((p) => {
+    const g = groupOf(p.cat);
+    return g && { type: 'Feature', geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+      properties: { group: g, color: GROUPS[g].color, name: p.name, place: JSON.stringify(poiPlace(p)) } };
+  }).filter(Boolean) };
+}
+function enabledLayers() { const l = settings.get().layers || {}; return Object.keys(GROUPS).filter((g) => l[g]); }
+function applyLayers() {
+  const on = enabledLayers();
+  document.querySelectorAll('#layers [data-layer]').forEach((b) => b.setAttribute('aria-pressed', on.includes(b.dataset.layer)));
+  const f = ['in', ['get', 'group'], ['literal', on]];
+  if (state.map.getLayer('allpois')) { state.map.setFilter('allpois', f); state.map.setFilter('allpois-label', f); }
+}
+function renderLayerChips() {
+  $('#layers').innerHTML = Object.entries(GROUPS).map(([k, g]) =>
+    `<button data-layer="${k}" aria-pressed="false" style="--chip:${g.color}">${g.icon} ${g.label}</button>`).join('');
+  $('#layers').onclick = (e) => {
+    const b = e.target.closest('[data-layer]');
+    if (!b) return;
+    const l = { ...(settings.get().layers || {}) };
+    l[b.dataset.layer] = !l[b.dataset.layer];
+    settings.set({ layers: l });
+    applyLayers();
+  };
+  applyLayers();
+}
+
+// ------------------------------------------------------------------ GPS + compass dashboard
 let compassOn = false;
 function onOrientation(e) {
   let h = null;
   if (e.webkitCompassHeading != null) h = e.webkitCompassHeading;
   else if (e.absolute && e.alpha != null) h = 360 - e.alpha;
-  if (h != null) { state.heading = h; updateArrows(); }
+  if (h != null) { state.heading = h; state.headingSrc = 'compass'; updateArrows(); }
 }
 async function startCompass() {
   try {
@@ -489,24 +614,161 @@ function updateArrows() {
     const rel = (+el.dataset.b - (state.heading || 0) + 360) % 360;
     el.style.transform = `rotate(${rel}deg)`;
   });
+  const h = $('#dash-heading');
+  if (h && state.heading != null) h.textContent = `${Math.round(state.heading)}° ${compassWord(state.heading)}`;
 }
-function renderHelp() {
+if (navigator.getBattery) {
+  navigator.getBattery().then((b) => {
+    const upd = () => { state.battery = { level: b.level, charging: b.charging }; if ($('#sheet').dataset.view === 'dash') renderDash(); };
+    upd();
+    b.addEventListener('levelchange', upd);
+    b.addEventListener('chargingchange', upd);
+  }).catch(() => {});
+}
+
+function remainingOnRoute(r, me) {
+  if (!r || !r.cum || !me) return null;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < r.coords.length; i += 1) {
+    const d = metersBetween(r.coords[i], [me.lon, me.lat]);
+    if (d < bd) { bd = d; best = i; }
+  }
+  const left = r.cum.at(-1) - r.cum[best];
+  return { dist: left, time: r.dist > 0 ? (r.time * left) / r.dist : 0, off: bd };
+}
+
+function renderDash() {
+  const me = state.me;
   const o = origin();
-  const rows = [['hospital', 'Hospital'], ['shelter', 'Shelter'], ['water', 'Water']].map(([cat, label]) => {
-    const p = nearest(cat === 'shelter' ? ['shelter', 'community'] : [cat], 1)[0];
+  const tile = (label, value, sub = '') => `<div class="tile"><div class="small muted">${label}</div><div class="big-num">${value}</div>${sub ? `<div class="small muted">${sub}</div>` : ''}</div>`;
+  const coords = me ? `${me.lat.toFixed(5)}, ${me.lon.toFixed(5)}` : 'No GPS fix';
+  const coordSub = me ? `±${Math.round(me.acc * 3.28)} ft · ${Math.round((Date.now() - me.t) / 1000)} s ago${me.speed != null && me.speed > 0.5 ? ` · ${Math.round(me.speed * 2.237)} mph` : ''}${me.alt != null ? ` · ${Math.round(me.alt * 3.28)} ft altitude` : ''}` : (state.gpsError ? esc(state.gpsError) : 'Waiting… best outside or near a window');
+  const heading = state.heading != null ? `${Math.round(state.heading)}° ${compassWord(state.heading)}` : '—';
+  const headingSub = state.heading != null ? (state.headingSrc === 'compass' ? 'from compass' : 'from GPS movement') : (compassOn ? 'Waiting for compass…' : 'Compass off');
+  const bat = state.battery ? `${Math.round(state.battery.level * 100)}%` : '—';
+  const batSub = state.battery ? (state.battery.charging ? 'charging' : 'on battery') : 'This browser does not share battery level (iPhone Safari does not)';
+  let dest = tile('Destination', '—', 'Pick a place or get directions');
+  let eta = tile('ETA', '—', 'No route yet');
+  const target = state.route ? { label: state.route.toLabel, lon: state.route.to[0], lat: state.route.to[1] } : state.selected;
+  if (target) {
+    const d = metersBetween([o.lon, o.lat], [target.lon, target.lat]);
+    dest = tile('Distance to destination', miles(d), `${esc(target.label)} · ${compassWord(bearingDeg([o.lon, o.lat], [target.lon, target.lat]))}, straight line`);
+  }
+  if (state.route) {
+    const rem = remainingOnRoute(state.route, me);
+    eta = rem && rem.off < 300
+      ? tile('ETA (estimate)', aboutTime(rem.time), `${miles(rem.dist)} left on the route · arrive around ${clockAt(rem.time)}`)
+      : tile('ETA (estimate)', aboutTime(state.route.time), `Whole route, ${miles(state.route.dist)}${rem ? ' · you are off the route line' : ''}`);
+  }
+  const helpRows = [['hospital', 'Hospital', ['hospital']], ['shelter', 'Shelter', ['shelter', 'community']], ['water', 'Water', ['water']]].map(([cat, label, cats]) => {
+    let p = nearest(cats, 1)[0];
+    let extra = '';
+    if (!p && cat === 'water') { p = nearest(['grocery'], 1)[0]; extra = ' (none mapped — nearest grocery)'; }
     if (!p) return `<li><div><b>${label}:</b> none in downloaded area</div></li>`;
-    return `<li><span class="arrow" data-b="${p.b.toFixed(0)}">↑</span><div><b>${label}: ${miles(p.d)}, ${compassWord(p.b)}</b><div class="small muted">${esc(p.name)}</div></div><button data-cat="${cat}">Go</button></li>`;
+    return `<li><span class="arrow" data-b="${p.b.toFixed(0)}">↑</span><div><b>${label}: ${miles(p.d)}, ${compassWord(p.b)}</b>${extra}<div class="small muted">${esc(p.name)}</div></div><button data-cat="${cat}">Go</button></li>`;
   }).join('');
-  const body = showSheet('Help nearby', `
-    <p class="small muted">From ${esc(o.label)}. Straight-line distance and direction. Works offline with GPS${compassOn ? ' and compass' : ''}.</p>
-    <ul class="list">${rows}</ul>
-    ${compassOn ? `<p class="small muted">Arrows point the way while you hold the phone flat.${state.heading == null ? ' Waiting for compass…' : ''}</p>`
-      : `<button class="big" id="compass" ${settings.get().battery ? 'disabled' : ''}>Turn on compass arrows</button>${settings.get().battery ? '<p class="small muted">Compass is off in battery saver. Arrows point as if north is up.</p>' : '<p class="small muted">Without the compass, arrows point as if north is up.</p>'}`}`, 'help', $('#sheet').dataset.view !== 'help' && !$('#sheet').hidden);
+  const t = trails.current();
+  const trailLine = t ? `<p class="small">🟠 Recording trail: ${t.points.length} points, ${miles(trailLength(t.points))}${t.points.length && me ? ` · start is ${miles(metersBetween([me.lon, me.lat], t.points[0]))} away` : ''}</p>` : '';
+  const sheet = $('#sheet');
+  const body = showSheet('GPS & compass', `
+    <div class="tiles">
+      ${tile('My coordinates', coords, coordSub)}
+      <div class="tile"><div class="small muted">Compass direction</div><div class="big-num" id="dash-heading">${heading}</div><div class="small muted">${headingSub}</div></div>
+      ${dest}${eta}
+      ${tile('Battery', bat, batSub)}
+    </div>
+    ${trailLine}
+    <h3>Nearest help (from ${esc(o.label)})</h3>
+    <ul class="list">${helpRows}</ul>
+    ${compassOn ? '<p class="small muted">Arrows point the way while you hold the phone flat.</p>'
+      : `<button class="big" id="compass" ${settings.get().battery ? 'disabled' : ''}>Turn on compass</button><p class="small muted">${settings.get().battery ? 'Compass is off in battery saver. ' : ''}Without the compass, arrows point as if north is up.</p>`}
+    <p class="small muted">Everything here works with no internet. ETA is an estimate from speed limits and distance — no live traffic.</p>`,
+  'dash', !sheet.hidden && sheet.dataset.view !== 'dash');
   updateArrows();
   body.onclick = async (e) => {
-    if (e.target.id === 'compass') { if (await startCompass()) renderHelp(); else e.target.textContent = 'Compass not available on this device'; }
+    if (e.target.id === 'compass') { if (await startCompass()) renderDash(); else e.target.textContent = 'Compass not available on this device'; }
     const b = e.target.closest('[data-cat]');
     if (b) nearestOne(b.dataset.cat);
+  };
+}
+
+// ------------------------------------------------------------------ breadcrumb trail
+let wakeLock = null;
+function trailLength(points) {
+  let d = 0;
+  for (let i = 1; i < points.length; i++) d += metersBetween(points[i - 1], points[i]);
+  return d;
+}
+function drawTrail(points) {
+  const src = state.map && state.map.getSource('trail');
+  if (!src) return;
+  const t = points || (trails.current() && trails.current().points) || state.shownTrail || [];
+  const feats = [];
+  if (t.length > 1) feats.push({ type: 'Feature', properties: { part: 'line' }, geometry: { type: 'LineString', coordinates: t.map((p) => [p[0], p[1]]) } });
+  if (t.length) feats.push({ type: 'Feature', properties: { part: 'start' }, geometry: { type: 'Point', coordinates: [t[0][0], t[0][1]] } });
+  src.setData({ type: 'FeatureCollection', features: feats });
+}
+function recordPoint(me) {
+  const t = trails.current();
+  if (!t || me.acc > 100) return;
+  const last = t.points.at(-1);
+  const minMove = settings.get().battery ? 25 : 10;
+  if (!last || metersBetween(last, [me.lon, me.lat]) >= minMove) {
+    trails.addPoint([+me.lon.toFixed(6), +me.lat.toFixed(6), Date.now()]);
+    drawTrail();
+  }
+}
+async function startTrail() {
+  trails.start();
+  state.shownTrail = null;
+  try { if (navigator.wakeLock && !settings.get().battery) wakeLock = await navigator.wakeLock.request('screen'); } catch { /* not supported */ }
+  if (state.me) recordPoint(state.me);
+  drawTrail();
+}
+function stopTrail() {
+  const t = trails.stop();
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  if (t) state.shownTrail = t.points;
+  drawTrail();
+  return t;
+}
+function routeBackTo(points, label) {
+  if (!points || !points.length) return;
+  state.dir.stops = [];
+  openDirections({ from: MY_LOCATION, to: { label, lon: points[0][0], lat: points[0][1] }, run: true });
+}
+
+function openTrail(msg = '') {
+  const t = trails.current();
+  const list = trails.saved();
+  const body = showSheet('Breadcrumb trail', `
+    ${msg ? `<div class="note">${esc(msg)}</div>` : ''}
+    ${t ? `<p><b>🟠 Recording.</b> ${t.points.length} points, ${miles(trailLength(t.points))} since ${new Date(t.started).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</p>
+      <button class="primary big" id="tstop">Stop and save trail</button>
+      <div class="row"><button id="tback">↩ Route back to trail start</button></div>`
+    : `<button class="primary big" id="tstart">● Start recording trail</button>`}
+    <div class="row"><button id="tcar">🚗 Mark my vehicle here</button><button id="twp">📍 Add waypoint here</button></div>
+    <p class="small muted">The trail records where you go so you can find your way back (for example to Home or your vehicle). Keep the app open with the screen on while recording — phones pause web apps in the background.${settings.get().battery ? ' Battery saver is on, so points are only added every 2 minutes.' : ''} Saved only on this device.</p>
+    ${list.length ? `<h3>Saved trails</h3><ul class="list">${list.map((s) => `<li><div><b>${esc(s.name)}</b><div class="small muted">${miles(trailLength(s.points))} · ${s.points.length} points</div></div>
+      <button data-show="${s.id}">Show</button><button class="primary" data-back="${s.id}">Back</button><button class="danger" data-del="${s.id}" aria-label="Delete trail">🗑</button></li>`).join('')}</ul>` : ''}`,
+  'trail', !$('#sheet').hidden && $('#sheet').dataset.view !== 'trail');
+  body.onclick = async (e) => {
+    const id = e.target.id;
+    if (id === 'tstart') { await startTrail(); openTrail(state.me ? 'Recording started.' : 'Recording started. Waiting for a GPS fix for the first point.'); }
+    if (id === 'tstop') { const s = stopTrail(); openTrail(s ? `Saved “${s.name}”.` : 'Stopped. No points were recorded (no GPS fix).'); }
+    if (id === 'tback') routeBackTo(trails.current().points, 'Trail start');
+    if (id === 'tcar' || id === 'twp') {
+      const o = origin();
+      const type = id === 'tcar' ? 'vehicle' : 'meeting';
+      const name = id === 'tcar' ? 'My vehicle' : `Waypoint ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+      saved.add({ name, type, lon: o.lon, lat: o.lat, address: `${o.lat.toFixed(5)}, ${o.lon.toFixed(5)}` });
+      openTrail(`Saved “${name}” at ${o.label}. Find it under Saved.`);
+    }
+    const sh = e.target.closest('[data-show]'), bk = e.target.closest('[data-back]'), dl = e.target.closest('[data-del]');
+    const find = (x) => trails.saved().find((s) => s.id === x);
+    if (sh) { const s = find(sh.dataset.show); state.shownTrail = s.points; drawTrail(s.points); const b = new maplibregl.LngLatBounds(); s.points.forEach((p) => b.extend([p[0], p[1]])); state.map.fitBounds(b, { padding: 60, maxZoom: 17 }); }
+    if (bk) { const s = find(bk.dataset.back); state.shownTrail = s.points; drawTrail(s.points); routeBackTo(s.points, `Start of ${s.name}`); }
+    if (dl && confirm('Delete this trail?')) { trails.remove(dl.dataset.del); state.shownTrail = null; drawTrail(); openTrail(); }
   };
 }
 
@@ -680,6 +942,8 @@ async function useArea(id, force) {
     state.flood = floodBlob ? JSON.parse(await floodBlob.text()) : null;
     await Promise.all([openSearch(id), loadRoads(id)]);
   }
+  const ap = state.map && state.map.getSource('allpois');
+  if (ap) ap.setData(poiFeatures());
   if (state.map) {
     await restyle(force);
     state.map.setMaxBounds(state.meta ? padBounds(state.meta.bbox, 0.25) : null);
@@ -695,7 +959,8 @@ function openMore() {
   const body = showSheet('More', `
     <div class="grid">
       <button data-m="essentials">🔎 Nearest essentials</button>
-      <button data-m="help">🧭 Help nearby (compass)</button>
+      <button data-m="dash">🧭 GPS & compass dashboard</button>
+      <button data-m="trail">🟠 Breadcrumb trail</button>
       <button data-m="pins">📌 My pins & notes</button>
       <button data-m="guide">⛑ First aid & survival guide</button>
       <button data-m="checklist">✅ Storm / blackout checklist</button>
@@ -706,7 +971,7 @@ function openMore() {
     <button class="big" data-m="about">About & limits</button>`, 'more');
   body.onclick = (e) => {
     const m = e.target.closest('[data-m]')?.dataset.m;
-    ({ essentials: openEssentials, help: renderHelp, pins: () => openPins(), guide: () => openGuide(), checklist: openChecklist, areas: () => openAreas(), about: openAbout })[m]?.();
+    ({ essentials: openEssentials, dash: renderDash, trail: () => openTrail(), pins: () => openPins(), guide: () => openGuide(), checklist: openChecklist, areas: () => openAreas(), about: openAbout })[m]?.();
   };
   $('#battery').onchange = async (e) => { settings.set({ battery: e.target.checked }); await applyBattery(); };
   $('#showflood').onchange = (e) => { settings.set({ showFlood: e.target.checked }); if (state.map.getLayer('flood-fill')) state.map.setLayoutProperty('flood-fill', 'visibility', e.target.checked ? 'visible' : 'none'); };
@@ -723,7 +988,7 @@ async function applyBattery() {
 
 function openAbout() {
   showSheet('About & limits', `
-    <p>An offline survival map for Houston. After you download a map area once, the map, search, directions, nearest help, saved places, pins and the guide all work with no internet, no Wi-Fi and no cell signal. GPS and compass work offline too.</p>
+    <p>An offline survival map for the Houston metro area. After you download a map area once, the map, search, directions, nearest help, saved places, pins and the guide all work with no internet, no Wi-Fi and no cell signal. GPS and compass work offline too.</p>
     <h3>What this app can NOT know offline</h3>
     <ul>
       <li>It does not know live traffic, accidents or road closures.</li>
@@ -745,6 +1010,7 @@ $('#bar').addEventListener('click', (e) => {
   if (act === 'saved') openSaved();
   if (act === 'more') openMore();
 });
+$('#dashbtn').onclick = () => renderDash();
 $('#locate').onclick = () => {
   if (state.me) state.map.easeTo({ center: [state.me.lon, state.me.lat], zoom: 16 });
   else showSheet('Location', `<div class="note">No GPS fix yet. GPS works without internet, but can take a minute — try outside or near a window.${state.gpsError ? '<br>(' + esc(state.gpsError) + ')' : ''}</div>`);
@@ -764,6 +1030,8 @@ async function start() {
   await useArea(id);
   if (settings.get().battery) await applyBattery(); else startGps();
   drawPins();
+  renderLayerChips();
+  if (trails.current()) { try { if (navigator.wakeLock && !settings.get().battery) wakeLock = await navigator.wakeLock.request('screen'); } catch { /* ignore */ } }
   if (!id) openAreas('Welcome! First, download the Houston map while you have internet. After that it all works offline.');
   if (!state.meta) state.map.jumpTo({ center: HOME_77088, zoom: 10 });
 }

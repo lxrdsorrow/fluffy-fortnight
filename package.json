@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Offline survival map for Houston, Texas",
   "scripts": {
-    "test": "node tests/offline.test.mjs tests/cases.nw-houston.json app/data",
+    "test": "node tests/offline.test.mjs tests/cases.houston-metro.json app/data",
     "start": "node scripts/serve.mjs 8080 app",
     "vendor": "node scripts/vendor.mjs",
     "build-data": "bash pipeline/build_all.sh"

@@ -1,6 +1,6 @@
 // Service worker: keeps the app itself (not the map data) saved on the device
 // so it opens with no internet. Map areas are stored separately (js/areas.js).
-const VERSION = 'hsm-app-v1';
+const VERSION = 'hsm-app-v2';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/areas.js', 'js/search.js', 'js/routing.js', 'js/route-worker.js', 'js/places.js',

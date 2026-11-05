@@ -52,8 +52,12 @@ POI_LABELS = {
     "hospital": "Hospital", "clinic": "Clinic / urgent care", "pharmacy": "Pharmacy",
     "police": "Police station", "fire": "Fire station", "shelter": "Shelter",
     "community": "Community center", "water": "Drinking water", "grocery": "Grocery store",
-    "fuel": "Gas station",
+    "fuel": "Gas station", "foodbank": "Food bank / pantry", "emergency": "Emergency management",
 }
+# places that count as "the same kind" when removing duplicates
+SAME_GROUP = {"hospital": "med", "clinic": "med", "pharmacy": "pharmacy", "police": "safety", "fire": "safety",
+              "emergency": "safety", "shelter": "shelter", "community": "shelter", "water": "water",
+              "grocery": "food", "foodbank": "food", "fuel": "fuel"}
 
 
 def poi_category(t):
@@ -71,6 +75,8 @@ def poi_category(t):
     if (t.get("social_facility") == "shelter" or t.get("emergency") == "assembly_point"
             or a == "refugee_site" or (a == "shelter" and t.get("shelter_type") in ("emergency", "storm_shelter"))):
         return "shelter"
+    if a == "food_bank" or t.get("social_facility") == "food_bank":
+        return "foodbank"
     if a == "community_centre":
         return "community"
     if a in ("drinking_water", "water_point") or t.get("man_made") in ("water_tap", "water_well"):
@@ -215,7 +221,7 @@ class Collector(osmium.SimpleHandler):
         if cat:
             addr = " ".join(x for x in (hn, street) if x)
             self.pois.append({"cat": cat, "name": name or POI_LABELS[cat], "lat": round(lat, 6), "lon": round(lon, 6),
-                              "addr": addr, "pc": t.get("addr:postcode", ""), "phone": t.get("phone", "")})
+                              "addr": addr, "pc": t.get("addr:postcode", ""), "phone": t.get("phone", ""), "src": "osm"})
         if name and (cat or any(k in t for k in PLACE_KEYS)) and not (hn and street):
             kind = POI_LABELS.get(cat) or (t.get("amenity") or t.get("shop") or t.get("tourism") or t.get("leisure")
                                            or t.get("healthcare") or t.get("office") or "place").replace("_", " ")
@@ -486,6 +492,51 @@ def write_flood_layer(flood, path):
         json.dump({"type": "FeatureCollection", "features": feats}, f, separators=(",", ":"))
 
 
+def merge_curated(path, c, pois, bbox):
+    """Add scouted, verified places. Ones without coordinates are placed only by an
+    exact address (or exact name) match in the OSM data — never guessed."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    addr_index = {}
+    for hn, street, unit, pc, city, name, lon, lat in c.addresses:
+        addr_index.setdefault((hn.lower(), normalize(street)), (lon, lat))
+    name_index = {}
+    for name, kind, lon, lat, addr, pc in c.places:
+        name_index.setdefault(normalize(name), (lon, lat))
+    w, s_, e, n = bbox
+    added, report = [], {"added": 0, "placedByAddress": [], "placedByName": [], "notFound": [], "outsideArea": 0}
+    for item in data["pois"]:
+        lon, lat = item.get("lon"), item.get("lat")
+        if lat is None or lon is None:
+            m = re.match(r"\s*(\d+[a-zA-Z]?)\s+(.+)", item["addr"].split(",")[0])
+            hit = addr_index.get((m.group(1).lower(), normalize(m.group(2)))) if m else None
+            if hit:
+                report["placedByAddress"].append(item["name"])
+            else:
+                hit = name_index.get(normalize(item["name"]))
+                if hit:
+                    report["placedByName"].append(item["name"])
+            if not hit:
+                report["notFound"].append(f'{item["name"]} ({item["addr"]})')
+                continue
+            lon, lat = hit
+        if not (w <= lon <= e and s_ <= lat <= n):
+            report["outsideArea"] += 1
+            continue
+        added.append({"cat": item["cat"], "name": item["name"], "lat": round(lat, 6), "lon": round(lon, 6),
+                      "addr": item["addr"], "pc": item.get("pc", ""), "phone": item.get("phone", ""),
+                      "note": item.get("note", ""), "src": "scouted"})
+    # drop OpenStreetMap copies of the same place (same kind, within ~120 m)
+    def close(a, b):
+        return abs(a["lat"] - b["lat"]) < 0.0011 and abs(a["lon"] - b["lon"]) < 0.0012
+    kept = [p for p in pois if not any(p["cat"] == q["cat"] and close(p, q) for q in added)]
+    report["added"] = len(added)
+    report["osmDuplicatesRemoved"] = len(pois) - len(kept)
+    print(f"  scouted places: {report['added']} added, {len(report['placedByAddress'])} placed by OSM address, "
+          f"{len(report['placedByName'])} by OSM name, not found: {report['notFound']}")
+    return kept + added, report
+
+
 def write_search(c, streets, pois, path):
     if os.path.exists(path):
         os.remove(path)
@@ -514,6 +565,11 @@ def write_search(c, streets, pois, path):
     for name, kind, lon, lat, addr, pc in c.places:
         sub = ", ".join(x for x in (kind, addr, ("TX " + pc) if pc else "") if x)
         rows.append((name, sub, "place", lat, lon, "", "", pc, 2, normalize(f"{name} {kind} {addr} {pc}")))
+    for p in pois:
+        if p.get("src") == "scouted":
+            sub = ", ".join(x for x in (POI_LABELS.get(p["cat"], ""), p["addr"], ("TX " + p["pc"]) if p["pc"] else "") if x)
+            rows.append((p["name"], sub, "place", p["lat"], p["lon"], "", "", p["pc"], 2,
+                         normalize(f'{p["name"]} {POI_LABELS.get(p["cat"], "")} {p["addr"]} {p["pc"]}')))
     for (nm, _, _), (x, y, _) in streets.items():
         rows.append((nm, "street", "street", y, x, "", normalize(nm), "", 3, normalize(nm + " street road")))
     for pc, (sx, sy, n) in pc_points.items():
@@ -541,6 +597,9 @@ def main():
     ap.add_argument("--name", required=True)
     ap.add_argument("--bbox", nargs=4, type=float, required=True)
     ap.add_argument("--flood")
+    ap.add_argument("--curated", help="pipeline/curated_pois.json (scouted, verified places)")
+    ap.add_argument("--kind", default="metro", help="metro or state pack")
+    ap.add_argument("--region", default="TX")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     t0 = time.time()
@@ -559,6 +618,9 @@ def main():
         if k not in seen:
             seen.add(k)
             pois.append(p)
+    curated_report = None
+    if a.curated:
+        pois, curated_report = merge_curated(a.curated, c, pois, a.bbox)
     with open(os.path.join(a.out, "pois.json"), "w", encoding="utf-8") as f:
         json.dump(pois, f, separators=(",", ":"), ensure_ascii=False)
     search_counts = write_search(c, streets, pois, os.path.join(a.out, "search.sqlite"))
@@ -571,7 +633,7 @@ def main():
         if os.path.exists(fp):
             files[fn] = os.path.getsize(fp)
     meta = {
-        "id": a.id, "name": a.name, "bbox": a.bbox, "built": time.strftime("%Y-%m-%d"),
+        "id": a.id, "name": a.name, "kind": a.kind, "region": a.region, "bbox": a.bbox, "scouted": curated_report, "built": time.strftime("%Y-%m-%d"),
         "files": files, "bytes": sum(files.values()),
         "counts": {"graphNodes": nn, "roadPieces": ne, "search": search_counts, "essentials": poi_counts,
                    "floodRoadPieces": flood_counts},

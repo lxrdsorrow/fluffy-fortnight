@@ -48,21 +48,19 @@ jobs:
         run: |
           python3 tests/make_fixture.py /tmp/fx
           python3 pipeline/build_area.py --pbf /tmp/fx/testville.osm --out /tmp/fxdata/testville --id testville \
-            --name "Testville (synthetic test town)" --bbox -95.473 29.872 -95.421 29.896 --flood /tmp/fx/flood.geojson
+            --name "Testville (synthetic test town)" --bbox -95.473 29.872 -95.421 29.896 --flood /tmp/fx/flood.geojson \
+            --curated tests/fixture_curated.json
           python3 pipeline/write_manifest.py /tmp/fxdata
           node tests/offline.test.mjs tests/cases.testville.json /tmp/fxdata
       - name: Download and build Houston data
         run: bash pipeline/build_all.sh
-      - name: Airplane-mode tests on real Houston data (home area)
+      - name: Airplane-mode tests on real Houston data (Houston metro pack)
         continue-on-error: true
-        run: node tests/offline.test.mjs tests/cases.nw-houston.json app/data
-      - name: Airplane-mode tests on real Houston data (metro area)
-        continue-on-error: true
-        run: node tests/offline.test.mjs tests/cases.nw-houston.json app/data houston-metro
+        run: node tests/offline.test.mjs tests/cases.houston-metro.json app/data
       - name: Report
         if: always()
         run: |
-          node tests/summary.mjs app/data nw-houston houston-metro | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/summary.mjs app/data houston-metro | tee -a "$GITHUB_STEP_SUMMARY"
           find app/data -size +95M -exec echo "WARNING: {} is larger than 95 MB (GitHub Pages may refuse it)" \;
       - name: Save the ready-to-use app with data (for laptops)
         if: always()

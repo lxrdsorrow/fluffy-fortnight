@@ -21,7 +21,7 @@ for d in sorted(os.listdir(out)):
     meta["bytes"] = sum(files.values())
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=1)
-    areas.append({k: meta[k] for k in ("id", "name", "bbox", "built", "files", "bytes", "hasFlood", "hasBasemap")})
+    areas.append({k: meta[k] for k in ("id", "name", "kind", "region", "bbox", "built", "files", "bytes", "hasFlood", "hasBasemap") if k in meta})
 with open(os.path.join(out, "areas.json"), "w", encoding="utf-8") as f:
     json.dump({"areas": areas}, f, indent=1)
 for a in areas:

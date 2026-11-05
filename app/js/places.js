@@ -9,7 +9,7 @@ function save(key, value) {
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-export const SAVED_TYPES = { home: 'Home', family: 'Family', shelter: 'Shelter', meeting: 'Meeting point', other: 'Other' };
+export const SAVED_TYPES = { home: 'Home', family: 'Family', shelter: 'Shelter', meeting: 'Meeting point / waypoint', vehicle: 'Vehicle', other: 'Other' };
 export const PIN_TYPES = {
   safe: { label: 'Safe route', color: '#1a9e4b' },
   hazard: { label: 'Hazard', color: '#e08a00' },
@@ -33,8 +33,27 @@ export const pins = {
 };
 
 export const settings = {
-  get: () => load('hsm.settings', { battery: false, avoidFlood: true, mode: 'car', area: null, showFlood: true }),
+  get: () => ({ battery: false, avoidFlood: true, mode: 'car', area: null, showFlood: true, layers: { hospital: true, shelter: true }, ...load('hsm.settings', {}) }),
   set(changes) { const s = { ...this.get(), ...changes }; save('hsm.settings', s); return s; },
+};
+
+// Breadcrumb trails: [lon, lat, time] points recorded while moving.
+export const trails = {
+  state: () => load('hsm.trails', { current: null, saved: [] }),
+  current() { return this.state().current; },
+  saved() { return this.state().saved; },
+  start() { const s = this.state(); s.current = { id: uid(), started: new Date().toISOString(), points: [] }; save('hsm.trails', s); },
+  addPoint(p) { const s = this.state(); if (!s.current) return; s.current.points.push(p); save('hsm.trails', s); },
+  stop() {
+    const s = this.state();
+    if (!s.current) return null;
+    const t = { ...s.current, ended: new Date().toISOString(), name: 'Trail ' + new Date(s.current.started).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) };
+    s.current = null;
+    if (t.points.length) s.saved.unshift(t);
+    save('hsm.trails', s);
+    return t.points.length ? t : null;
+  },
+  remove(id) { const s = this.state(); s.saved = s.saved.filter((t) => t.id !== id); save('hsm.trails', s); },
 };
 
 export const checklist = {
