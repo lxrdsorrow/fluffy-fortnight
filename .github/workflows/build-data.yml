@@ -1,0 +1,91 @@
+# Builds the offline Houston map data on GitHub's computers (they have internet),
+# runs the airplane-mode tests on the REAL data, and makes a download.
+# On the main branch it also publishes the app to GitHub Pages.
+name: Build Houston map data
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, claude/offline-houston-survival-map-evr88f]
+    paths: ['pipeline/**', 'app/**', 'tests/**', 'scripts/**', '.github/workflows/build-data.yml']
+  schedule:
+    - cron: '23 8 1 * *' # refresh the data once a month
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: build-data-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Install tools
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q osmium-tool
+          pip install osmium==4.3.2 shapely numpy
+          npm ci
+          node scripts/vendor.mjs
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: Reuse last week's Texas download
+        uses: actions/cache@v4
+        with:
+          path: build-cache/texas.osm.pbf
+          key: osm-texas-${{ github.run_id }}
+          restore-keys: osm-texas-
+      - name: Test the tools on the small made-up test town
+        run: |
+          python3 tests/make_fixture.py /tmp/fx
+          python3 pipeline/build_area.py --pbf /tmp/fx/testville.osm --out /tmp/fxdata/testville --id testville \
+            --name "Testville (synthetic test town)" --bbox -95.473 29.872 -95.421 29.896 --flood /tmp/fx/flood.geojson
+          python3 pipeline/write_manifest.py /tmp/fxdata
+          node tests/offline.test.mjs tests/cases.testville.json /tmp/fxdata
+      - name: Download and build Houston data
+        run: bash pipeline/build_all.sh
+      - name: Airplane-mode tests on real Houston data (home area)
+        continue-on-error: true
+        run: node tests/offline.test.mjs tests/cases.nw-houston.json app/data
+      - name: Airplane-mode tests on real Houston data (metro area)
+        continue-on-error: true
+        run: node tests/offline.test.mjs tests/cases.nw-houston.json app/data houston-metro
+      - name: Report
+        if: always()
+        run: |
+          node tests/summary.mjs app/data nw-houston houston-metro | tee -a "$GITHUB_STEP_SUMMARY"
+          find app/data -size +95M -exec echo "WARNING: {} is larger than 95 MB (GitHub Pages may refuse it)" \;
+      - name: Save the ready-to-use app with data (for laptops)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: houston-survival-map
+          path: |
+            app
+            scripts/serve.mjs
+            START-HERE.txt
+          retention-days: 30
+      - name: Prepare GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with: { path: app }
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

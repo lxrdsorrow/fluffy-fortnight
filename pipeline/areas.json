@@ -1,0 +1,16 @@
+{
+  "areas": [
+    {
+      "id": "nw-houston",
+      "name": "Home area: NW Houston (77088) to Downtown & Medical Center",
+      "bbox": [-95.62, 29.68, -95.28, 29.98],
+      "maxzoom": 15
+    },
+    {
+      "id": "houston-metro",
+      "name": "Greater Houston (Harris County and around)",
+      "bbox": [-95.97, 29.48, -94.90, 30.20],
+      "maxzoom": 14
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Houston Survival Map</title>
+  <meta name="description" content="Offline survival map for Houston: search, directions, nearest help and flood warnings without internet.">
+  <meta name="theme-color" content="#1f2a36">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="vendor/maplibre-gl.js"></script>
+  <script src="vendor/pmtiles.js"></script>
+  <script src="vendor/basemaps.js"></script>
+  <script src="vendor/sql-wasm.js"></script>
+</head>
+<body>
+  <div id="map" aria-label="Map"></div>
+
+  <header id="top">
+    <div class="searchbox">
+      <input id="q" type="search" placeholder="Search address or place" autocomplete="off" enterkeyhint="search" aria-label="Search address or place">
+      <button id="qclear" class="icon" aria-label="Clear search" hidden>✕</button>
+    </div>
+    <div id="suggest" class="suggest" role="listbox" hidden></div>
+    <div id="status" class="status" aria-live="polite"></div>
+  </header>
+
+  <button id="locate" class="fab" aria-label="Show my location" title="Show my location">◎</button>
+
+  <nav id="bar">
+    <button data-act="directions"><span>🧭</span>Directions</button>
+    <button data-act="hospital"><span>🏥</span>Hospital</button>
+    <button data-act="shelter"><span>🏠</span>Shelter</button>
+    <button data-act="saved"><span>⭐</span>Saved</button>
+    <button data-act="more"><span>☰</span>More</button>
+  </nav>
+
+  <section id="sheet" class="sheet" hidden aria-live="polite">
+    <div class="sheet-head">
+      <button id="sheet-back" class="icon" aria-label="Back" hidden>‹</button>
+      <h2 id="sheet-title"></h2>
+      <button id="sheet-min" class="icon" aria-label="Shrink panel to see the map" title="Show more map">▾</button>
+      <button id="sheet-close" class="icon" aria-label="Close">✕</button>
+    </div>
+    <div id="sheet-body"></div>
+  </section>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
