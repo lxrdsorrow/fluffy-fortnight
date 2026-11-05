@@ -166,6 +166,24 @@ def road_rules(t):
     return (car and fwd, car and bwd, foot, bfwd, bbwd, max(5, min(140, speed)), flags)
 
 
+def clean_text(v):
+    """Remove line breaks, tabs and other hidden characters some OSM names contain."""
+    if not v:
+        return v
+    v = re.sub(r"[\x00-\x1f\x7f\u200b-\u200f\u2028\u2029\ufeff]+", " ", str(v))
+    return re.sub(r"\s+", " ", v).strip()
+
+
+FRONTAGE = re.compile(r"^(.*\b(?:Freeway|Fwy|Highway|Hwy|Tollway|Expressway|Expy|Parkway|Pkwy))\s+(?:Frontage|Service|Feeder)\s+(?:Road|Rd)$", re.I)
+
+
+def mailing_street(street):
+    """OSM often writes "Southwest Freeway Frontage Road"; mailing addresses (and
+    the Census) use the main road name: "Southwest Freeway"."""
+    m = FRONTAGE.match(street or "")
+    return m.group(1) if m else street
+
+
 def road_name(t):
     n = t.get("name")
     ref = t.get("ref")
@@ -212,6 +230,7 @@ class Collector(osmium.SimpleHandler):
     def _feature(self, t, lon, lat):
         if not self.inside(lon, lat):
             return
+        t = {k: clean_text(v) for k, v in t.items()}
         hn, street = t.get("addr:housenumber"), t.get("addr:street")
         name = t.get("name")
         if hn and street:
@@ -242,7 +261,7 @@ class Collector(osmium.SimpleHandler):
         self._feature(dict(t), n.location.lon, n.location.lat)
 
     def way(self, w):
-        t = dict(w.tags)
+        t = {k: clean_text(v) for k, v in w.tags}
         rules = road_rules(t)
         if rules:
             start = len(self.refs)
@@ -618,10 +637,11 @@ def write_search(c, streets, pois, path):
         if key in seen:
             continue
         seen.add(key)
-        label = f"{hn} {street}" + (f" #{unit}" if unit else "")
+        mail = mailing_street(street)
+        label = f"{hn} {mail}" + (f" #{unit}" if unit else "")
         sub = ", ".join(x for x in (name, city or "", ("TX " + pc) if pc else "") if x)
-        txt = normalize(f"{label} {pc} {city} {name}")
-        rows.append((label, sub, "address", lat, lon, hn.lower(), normalize(street), pc, 1, txt))
+        txt = normalize(f"{label} {pc} {city} {name}" + (f" {street}" if mail != street else ""))
+        rows.append((label, sub, "address", lat, lon, hn.lower(), normalize(mail), pc, 1, txt))
         if pc and re.fullmatch(r"\d{5}", pc):
             s = pc_points.setdefault(pc, [0.0, 0.0, 0])
             s[0] += lon; s[1] += lat; s[2] += 1
