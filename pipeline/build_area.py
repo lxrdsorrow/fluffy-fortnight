@@ -499,6 +499,62 @@ def write_flood_layer(flood, path):
         json.dump({"type": "FeatureCollection", "features": feats}, f, separators=(",", ":"))
 
 
+def assign_zips(c, pois, path):
+    """Give every address / place / essential a ZIP code from the official Census
+    ZIP areas when OpenStreetMap has none. Where both exist and disagree, the
+    OSM value is kept and the disagreement is reported for checking."""
+    clean = lambda z: (re.match(r"\s*(\d{5})", z or "") or [None, ""])[1]
+    report = {"filled": 0, "agree": 0, "disagree": 0, "disagreeSamples": [], "noZipArea": 0}
+    if not path or not os.path.exists(path):
+        c.addresses = [(hn, st, un, clean(pc), city, nm, lo, la) for hn, st, un, pc, city, nm, lo, la in c.addresses]
+        return None
+    with open(path, encoding="utf-8") as f:
+        gj = json.load(f)
+    geoms, zips = [], []
+    for feat in gj["features"]:
+        try:
+            geoms.append(shapely.make_valid(shape(feat["geometry"])))
+            zips.append(feat["properties"]["zip"])
+        except Exception:
+            pass
+    tree = STRtree(geoms)
+
+    def lookup(lons, lats):
+        out = [None] * len(lons)
+        if not lons:
+            return out
+        pi, gi = tree.query(shapely.points(lons, lats), predicate="within")
+        for a_, b_ in zip(pi, gi):
+            out[a_] = zips[b_]
+        return out
+
+    z = lookup([a[6] for a in c.addresses], [a[7] for a in c.addresses])
+    new = []
+    for (hn, st, un, pc, city, nm, lo, la), zz in zip(c.addresses, z):
+        pc = clean(pc)
+        if not zz:
+            report["noZipArea"] += 1
+        elif not pc:
+            pc = zz
+            report["filled"] += 1
+        elif pc == zz:
+            report["agree"] += 1
+        else:
+            report["disagree"] += 1
+            if len(report["disagreeSamples"]) < 15:
+                report["disagreeSamples"].append(f"{hn} {st}: OSM {pc}, Census {zz}")
+        new.append((hn, st, un, pc, city, nm, lo, la))
+    c.addresses = new
+    z = lookup([p[2] for p in c.places], [p[3] for p in c.places])
+    c.places = [(nm, kd, lo, la, ad, clean(pc) or (zz or "")) for (nm, kd, lo, la, ad, pc), zz in zip(c.places, z)]
+    z = lookup([p["lon"] for p in pois], [p["lat"] for p in pois])
+    for p_, zz in zip(pois, z):
+        p_["pc"] = clean(p_.get("pc")) or (zz or "")
+    print(f"  ZIP codes (Census): {report['filled']} filled in, {report['agree']} agree, "
+          f"{report['disagree']} disagree (OSM kept), {report['noZipArea']} outside ZIP areas")
+    return report
+
+
 def merge_curated(path, c, pois, bbox):
     """Add scouted, verified places. Ones without coordinates are placed only by an
     exact address (or exact name) match in the OSM data — never guessed."""
@@ -605,6 +661,7 @@ def main():
     ap.add_argument("--bbox", nargs=4, type=float, required=True)
     ap.add_argument("--flood")
     ap.add_argument("--curated", help="pipeline/curated_pois.json (scouted, verified places)")
+    ap.add_argument("--zcta", help="Census ZIP code areas from fetch_zcta.py")
     ap.add_argument("--kind", default="metro", help="metro or state pack")
     ap.add_argument("--region", default="TX")
     a = ap.parse_args()
@@ -625,6 +682,7 @@ def main():
         if k not in seen:
             seen.add(k)
             pois.append(p)
+    zip_report = assign_zips(c, pois, a.zcta)
     curated_report = None
     if a.curated:
         pois, curated_report = merge_curated(a.curated, c, pois, a.bbox)
@@ -640,7 +698,7 @@ def main():
         if os.path.exists(fp):
             files[fn] = os.path.getsize(fp)
     meta = {
-        "id": a.id, "name": a.name, "kind": a.kind, "region": a.region, "bbox": a.bbox, "scouted": curated_report, "built": time.strftime("%Y-%m-%d"),
+        "id": a.id, "name": a.name, "kind": a.kind, "region": a.region, "bbox": a.bbox, "scouted": curated_report, "zipCheck": zip_report, "built": time.strftime("%Y-%m-%d"),
         "files": files, "bytes": sum(files.values()),
         "counts": {"graphNodes": nn, "roadPieces": ne, "search": search_counts, "essentials": poi_counts,
                    "floodRoadPieces": flood_counts},

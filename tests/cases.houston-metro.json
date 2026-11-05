@@ -36,5 +36,17 @@
   "stopQuery": "Food Town",
   "homeQuery": "901 Bagby St",
   "floodRoute": "1500 McKinney St",
-  "about": "samplePostcodes: random real addresses from the OSM index. 77088 = NW home area, 77002 = downtown, 77036 = southwest (Sharpstown/Gulfton), 77087 = southeast (Gulfgate/Park Place), 77016 = northeast (Trinity Gardens/East Little York)."
+  "about": "samplePostcodes: random real addresses from the OSM index. 77088 = NW home area, 77002 = downtown, 77036 = southwest (Sharpstown/Gulfton), 77087 = southeast (Gulfgate/Park Place), 77016 = northeast (Trinity Gardens/East Little York). accuracyPostcodes: addresses checked against the US Census geocoder in tests/accuracy.mjs (77008 Heights, 77030 Medical Center, 77074 SW, 77017 SE, 77028 NE added).",
+  "accuracyPostcodes": {
+    "77088": 5,
+    "77002": 3,
+    "77008": 2,
+    "77030": 2,
+    "77036": 3,
+    "77074": 2,
+    "77087": 3,
+    "77017": 2,
+    "77016": 3,
+    "77028": 2
+  }
 }
