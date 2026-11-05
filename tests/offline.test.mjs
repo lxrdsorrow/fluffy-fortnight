@@ -18,7 +18,7 @@ const cases = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const dataDir = process.argv[3];
 if (process.argv[4]) cases.area = process.argv[4]; // e.g. run the Houston cases against the metro area
 const PORT = 8000 + Math.floor(Math.random() * 900);
-const BASE = `http://localhost:${PORT}/`;
+const BASE = process.env.BASE_URL || `http://localhost:${PORT}/`; // BASE_URL = test the live website
 const results = [];
 const record = (n, name, ok, detail) => { results.push({ n, name, ok, detail }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${n}. ${name} — ${detail}`); };
 const text = async (p, sel) => ((await p.textContent(sel)) || '').replace(/\s+/g, ' ').trim();
@@ -60,8 +60,8 @@ async function routeShown(p, timeout = 30000) {
   return text(p, '#dres');
 }
 
-const server = spawn(process.execPath, ['scripts/serve.mjs', String(PORT), 'app', dataDir], { stdio: 'ignore' });
-await new Promise((r) => setTimeout(r, 700));
+const server = process.env.BASE_URL ? null : spawn(process.execPath, ['scripts/serve.mjs', String(PORT), 'app', dataDir], { stdio: 'ignore' });
+if (server) await new Promise((r) => setTimeout(r, 700));
 const browser = await chromium.launch();
 const ctx = await browser.newContext({
   geolocation: { latitude: cases.gps[0], longitude: cases.gps[1], accuracy: 10 },
@@ -357,7 +357,7 @@ try {
   await page.screenshot({ path: join(dataDir, `screen-${cases.area}-crash.png`) }).catch(() => {});
 } finally {
   await browser.close();
-  server.kill();
+  if (server) server.kill();
 }
 const passed = results.filter((r) => r.ok).length;
 console.log(`\n${passed}/${results.length} checks passed for area "${cases.area}"`);
