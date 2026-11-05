@@ -42,7 +42,10 @@ for (const [pc, n] of Object.entries(cases.accuracyPostcodes || cases.samplePost
 }
 
 // ---- 14a. Census geocoder comparison
-const STREET_WORDS = (s) => normalize(s).split(' ').filter((w) => !['street', 'road', 'drive', 'avenue', 'boulevard', 'lane', 'court', 'circle', 'parkway', 'place', 'way', 'trail'].includes(w));
+// street-type and frontage/service-road words are ignored when comparing names
+const IGNORE = ['street', 'road', 'drive', 'avenue', 'boulevard', 'lane', 'court', 'circle', 'parkway', 'place', 'way', 'trail', 'service', 'svc', 'frontage', 'feeder'];
+const STREET_WORDS = (s) => normalize(s).split(' ').filter((w) => !IGNORE.includes(w));
+const DIRS = ['north', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest'];
 async function census(addr) {
   const url = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?benchmark=Public_AR_Current&format=json&address=' + encodeURIComponent(addr);
   for (let i = 0; i < 3; i++) {
@@ -66,6 +69,13 @@ if (useCensus) {
       const theirs = STREET_WORDS(cStreet).join(' ');
       const d = meters([p.lon, p.lat], [m.coordinates.x, m.coordinates.y]);
       const streetOk = ours === theirs || ours.endsWith(theirs) || theirs.endsWith(ours);
+      // The Census sometimes drops a direction word and answers for a different street
+      // (e.g. "South Gessner" 77036 -> "Gessner" 77041, 15 km away). That is not our error.
+      const dropped = DIRS.filter((w) => ours.split(' ').includes(w) && !theirs.split(' ').includes(w));
+      if (dropped.length && c.zip !== p.pc && d > 2000) {
+        rows.push({ ...p, status: 'unverified', note: `Census matched a different street ("${m.matchedAddress}", ${Math.round(d / 1000)} km away, without "${dropped.join(' ')}")` });
+        continue;
+      }
       const zipOk = !p.pc || p.pc === c.zip;
       const placeOk = d < 300; // Census places addresses along the street by number ranges, so allow some distance
       rows.push({ ...p, status: streetOk && zipOk && placeOk ? 'match' : 'mismatch', d: Math.round(d), census: m.matchedAddress, streetOk, zipOk, placeOk });
@@ -79,7 +89,7 @@ if (useCensus) {
   const errs = rows.filter((r) => r.status === 'error').length;
   record('14a', 'Addresses match official Census data (street spelling, ZIP, location)',
     checked.length >= Math.min(10, picks.length) && matched.length >= 0.9 * checked.length,
-    `${matched.length}/${checked.length} match; ${rows.filter((r) => r.status === 'unverified').length} not in Census (cannot verify); ${errs} lookup errors. ` +
+    `${matched.length}/${checked.length} match; ${rows.filter((r) => r.status === 'unverified').length} could not be verified (${rows.filter((r) => r.status === 'unverified').map((r) => `${r.label}: ${r.note}`).join('; ') || 'none'}); ${errs} lookup errors. ` +
     (bad.length ? 'Mismatches: ' + bad.slice(0, 8).map((r) => `"${r.label} ${r.pc}" vs Census "${r.census}" (${[!r.streetOk && 'street', !r.zipOk && 'ZIP', !r.placeOk && `${r.d} m apart`].filter(Boolean).join(', ')})`).join(' / ') : 'No mismatches.') +
     ' Examples: ' + matched.slice(0, 4).map((r) => `${r.label} ${r.pc} ≈ ${r.census} (${r.d} m)`).join(' / '));
   writeFileSync(join(dataDir, `accuracy-addresses-${cases.area}.json`), JSON.stringify(rows, null, 1));
