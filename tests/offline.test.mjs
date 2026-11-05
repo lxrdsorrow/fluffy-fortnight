@@ -294,7 +294,8 @@ try {
   await page.evaluate(() => window.dispatchEvent(Object.assign(new Event('deviceorientationabsolute'), { alpha: 90, absolute: true })));
   await page.waitForTimeout(1500);
   const d10 = await text(page, '#sheet-body');
-  const coordsOk = d10.includes(cases.gps[0].toFixed(3));
+  const shown = d10.match(/My coordinates\s*(-?\d+\.\d+), (-?\d+\.\d+)/);
+  const coordsOk = !!shown && Math.abs(+shown[1] - cases.gps[0]) < 0.0005 && Math.abs(+shown[2] - cases.gps[1]) < 0.0005;
   const headingOk = /270° west/.test(d10);
   const distOk = /Distance to destination\s*[\d.]+ (mi|ft)/.test(d10);
   const etaOk = /ETA \(estimate\)\s*about \d/.test(d10);
@@ -302,7 +303,7 @@ try {
   const helpOk = /Hospital: [\d.]+ (mi|ft)/.test(d10);
   await page.screenshot({ path: join(dataDir, `screen-${cases.area}-dashboard.png`) });
   record(10, 'GPS + compass dashboard (coordinates, compass, distance, battery, ETA)', coordsOk && headingOk && distOk && etaOk && batOk && helpOk,
-    `coords=${coordsOk} compass=${headingOk} distance=${distOk} eta=${etaOk} battery=${(d10.match(/Battery\s*(\d+%|—)/) || [])[1]} nearest-help=${helpOk}`);
+    `coords=${coordsOk} (${shown ? shown[1] + ', ' + shown[2] : 'none'}) compass=${headingOk} distance=${distOk} eta=${etaOk} battery=${(d10.match(/Battery\s*(\d+%|—)/) || [])[1]} nearest-help=${helpOk}`);
 
   // 11. battery saver
   await closeIfOpen(page);

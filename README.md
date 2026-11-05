@@ -87,11 +87,18 @@ packs can be added later without changing the app.
 In the app: **More → Map areas & storage** shows the pack's size, the space
 used on the device, and buttons to **Download**, **Update**, **Use** and **Delete**.
 
-**Download size:** the GitHub workflow prints the exact size of every file in
-its run **Summary**. (This build container could not reach the map data sites,
-so sizes are measured on GitHub.) The pack is: `basemap.pmtiles` (map
-pictures, the biggest part), `search.sqlite` (addresses), `graph.bin` (roads),
-`pois.json` (survival places) and `flood.geojson` (floodplains).
+**Download size (real build, 2026-11-05): about 173 MB in total** for the
+whole Houston metro pack:
+
+| File | Size | What it is |
+|---|---|---|
+| `graph.bin` | 79.5 MB | road network for directions (1.2 million junctions, 1.6 million road pieces) |
+| `basemap.pmtiles` | 44.1 MB | map pictures |
+| `search.sqlite` | 38.1 MB | search index: 136,873 addresses, 24,873 places, street names, 221 ZIP codes |
+| `flood.geojson` | 10.1 MB | FEMA floodplains (18,304 shapes) |
+| `pois.json` | 0.9 MB | 7,000+ survival places (123 hospitals, 635 clinics, 497 pharmacies, 357 fire stations, 132 police, 2,257 groceries, 2,362 gas stations, 249 water points, 227 community centers, 8 food banks, 4 shelters) |
+
+The workflow prints these numbers again on every run (Actions → run → Summary).
 
 ### Scouted survival places
 `pipeline/curated_pois.json` holds the Houston locations from the Scouting
@@ -107,6 +114,13 @@ H-E-B and other groceries, gas). Rules the builder follows:
 - Left out on purpose: PVE Pharmacy and Unique Drugs (listed temporarily
   closed), Foodarama and Aldi (scout said verify first).
 - Duplicates of the same place from OpenStreetMap are removed.
+- Real build result: 51 of 56 scouted places added (5 of them placed by
+  matching their address in OpenStreetMap). **Not found, so left out:**
+  Baylor St. Luke's Medical Center (1101 Bates Ave), St. Joseph Medical Center
+  (1401 St Joseph Pkwy), The Harris Center NeuroPsychiatric Center
+  (1502 Taub Loop), Salvation Army Center of Hope (1500 Austin St) and
+  Anderson Food Pantry (1508 Gregg St). Adding verified coordinates for these
+  to `curated_pois.json` will include them on the next build.
 - Known gap (from the scout): no large overnight shelter inside 77088; the
   nearest day shelter is 1960 Hope Center (77090), the big overnight
   shelters are downtown. No standalone public water source was verified in

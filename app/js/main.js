@@ -464,9 +464,17 @@ function routeHtml(r) {
   let flood = '';
   const spots = r.flood.spots;
   if (spots.length) {
-    const top = spots.slice(0, 8).map((s) => `<li>${esc(s.road)}: ${s.kinds.map((k) => FLOOD_WORDS[k]).join('; ')}</li>`).join('');
+    // group repeats of the same road + warning into one line with a count
+    const grouped = new Map();
+    for (const sp of spots) {
+      const key = sp.road + '|' + sp.kinds.join(',');
+      const g = grouped.get(key);
+      if (g) g.n++; else grouped.set(key, { ...sp, n: 1 });
+    }
+    const lines = [...grouped.values()];
+    const top = lines.slice(0, 8).map((s) => `<li>${esc(s.road)}${s.n > 1 ? ` (${s.n} spots)` : ''}: ${s.kinds.map((k) => FLOOD_WORDS[k]).join('; ')}</li>`).join('');
     flood = `<div class="note"><b>⚠ Flood warning:</b> this route passes ${spots.length} flood-prone spot${spots.length > 1 ? 's' : ''} (yellow dots).
-      <ul>${top}</ul>${spots.length > 8 ? `<div>…and ${spots.length - 8} more.</div>` : ''}
+      <ul>${top}</ul>${lines.length > 8 ? `<div>…and ${lines.length - 8} more roads.</div>` : ''}
       This warning is based on FEMA floodplain maps and road shape. It is NOT a live flood report — the app cannot know if a road is flooded right now. Never drive or walk into water.</div>`;
   } else if (state.meta && state.meta.hasFlood) {
     flood = '<p class="small muted">No mapped flood-prone spots on this route. That does not mean it is dry right now — watch for water.</p>';
