@@ -33,7 +33,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q osmium-tool
-          pip install osmium==4.3.2 shapely numpy
+          pip install osmium==4.3.2 shapely numpy pmtiles mapbox-vector-tile
           npm ci
           node scripts/vendor.mjs
           npm install --no-save playwright@1.63.0
@@ -49,18 +49,23 @@ jobs:
           python3 tests/make_fixture.py /tmp/fx
           python3 pipeline/build_area.py --pbf /tmp/fx/testville.osm --out /tmp/fxdata/testville --id testville \
             --name "Testville (synthetic test town)" --bbox -95.473 29.872 -95.421 29.896 --flood /tmp/fx/flood.geojson \
-            --curated tests/fixture_curated.json
+            --curated tests/fixture_curated.json --zcta /tmp/fx/zcta.geojson
+          python3 tests/make_fixture_basemap.py /tmp/fxdata/testville/basemap.pmtiles
           python3 pipeline/write_manifest.py /tmp/fxdata
           node tests/offline.test.mjs tests/cases.testville.json /tmp/fxdata
+          node tests/accuracy.mjs tests/cases.testville.json /tmp/fxdata --no-census
       - name: Download and build Houston data
         run: bash pipeline/build_all.sh
       - name: Airplane-mode tests on real Houston data (Houston metro pack)
         continue-on-error: true
         run: node tests/offline.test.mjs tests/cases.houston-metro.json app/data
+      - name: Accuracy check (test 14) against official US Census data
+        continue-on-error: true
+        run: node tests/accuracy.mjs tests/cases.houston-metro.json app/data
       - name: Report
         if: always()
         run: |
-          node tests/summary.mjs app/data houston-metro | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/summary.mjs app/data houston-metro accuracy-houston-metro | tee -a "$GITHUB_STEP_SUMMARY"
           find app/data -size +95M -exec echo "WARNING: {} is larger than 95 MB (GitHub Pages may refuse it)" \;
       - name: Save the ready-to-use app with data (for laptops)
         if: always()

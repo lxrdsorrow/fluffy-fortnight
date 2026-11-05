@@ -80,4 +80,8 @@ with open(os.path.join(out, "flood.geojson"), "w", encoding="utf-8") as f:
     json.dump({"type": "FeatureCollection", "features": [
         {"type": "Feature", "properties": {"SFHA_TF": "T", "FLD_ZONE": "AE", "ZONE_SUBTY": ""},
          "geometry": {"type": "Polygon", "coordinates": [band]}}]}, f)
+# SYNTHETIC ZIP area covering the whole test town (stands in for Census ZCTA data)
+with open(os.path.join(out, "zcta.geojson"), "w", encoding="utf-8") as f:
+    json.dump({"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"zip": "77999"},
+        "geometry": {"type": "Polygon", "coordinates": [[[-95.5, 29.85], [-95.4, 29.85], [-95.4, 29.92], [-95.5, 29.92], [-95.5, 29.85]]]}}]}, f)
 print("bbox", LON0 - 2 * DLON, LAT0 - DLAT, LON0 + 11 * DLON, LAT0 + 7 * DLAT)

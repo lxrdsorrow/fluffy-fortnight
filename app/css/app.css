@@ -139,3 +139,11 @@ input, select, textarea {
 .tile { background: var(--card); border-radius: 12px; padding: 10px; }
 .big-num { font-size: 20px; font-weight: 700; word-break: break-word; }
 .stop { display: flex; align-items: center; justify-content: space-between; background: var(--card); border-radius: 10px; padding: 4px 4px 4px 12px; margin: 6px 0; }
+
+/* Wide screens (laptops/desktops): keep the bottom bar phone-sized and centered, and let place toggles wrap */
+@media (min-width: 760px) {
+  #bar { max-width: 720px; margin: 0 auto; border-radius: 18px 18px 0 0; }
+  .layerchips { flex-wrap: wrap; overflow: visible; }
+}
+.layerchips { padding-right: 12px; }
+#top .status { display: block; width: fit-content; margin-left: max(0px, calc(50% - 320px)); }

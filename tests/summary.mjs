@@ -8,8 +8,9 @@ if (existsSync(`${dir}/areas.json`)) {
   for (const a of areas) out.push(`| ${a.name} | **${(a.bytes / 1e6).toFixed(1)} MB** | ${Object.entries(a.files).map(([f, b]) => `${f} ${(b / 1e6).toFixed(1)} MB`).join(', ')} |`);
   out.push('');
   for (const a of areas) {
-    const m = JSON.parse(readFileSync(`${dir}/${a.id}/meta.json`, 'utf8'));
-    out.push(`**${a.id}** counts: \`${JSON.stringify(m.counts)}\``, '');
+    const mp = `${dir}/${a.id}/meta.json`;
+    const m = existsSync(mp) ? JSON.parse(readFileSync(mp, 'utf8')) : a;
+    if (m.counts) out.push(`**${a.id}** counts: \`${JSON.stringify(m.counts)}\``, '');
   }
 }
 for (const id of process.argv.slice(3)) {

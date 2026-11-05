@@ -169,6 +169,39 @@ made-up town so the tools can be tested without downloading Houston.
 
 ---
 
+## Accuracy (test 14)
+
+**Why not Google Maps?** Google's terms do not allow using Google Maps data to
+check or correct another map, and OpenStreetMap does not allow copying from
+Google either, even by hand. Doing it would put this project (and OSM) at legal
+risk. So the app is checked against **official US government data**, which is
+free and public:
+
+- **US Census Bureau geocoder:** `tests/accuracy.mjs` takes the fixed test
+  addresses (City Hall, 901 Bagby St) plus random real addresses from NW
+  (77088), downtown (77002), the Heights (77008), the Medical Center (77030),
+  SW (77036, 77074), SE (77087, 77017) and NE (77016, 77028). For each one it
+  compares our street name and spelling, ZIP code, and pin location with the
+  Census answer.
+- **Census ZIP code areas:** the builder (`pipeline/fetch_zcta.py`) gives every
+  address and place a ZIP code from the official Census ZIP areas when
+  OpenStreetMap has none, trims "77088-1234" to "77088", and reports any
+  address where OSM and the Census disagree (`zipCheck` in `meta.json`).
+- **Routes:** checked to start and end on the road, never jump across blocks
+  (no straight piece longer than 2 km), and be a sensible length (between
+  1× and 3× the straight-line distance). Routes are drawn along the real road
+  shapes from OpenStreetMap, so they follow real roads by design.
+- **Names:** checked for broken or garbled characters.
+
+The results are in each GitHub build's **Summary** under *Airplane-mode tests:
+accuracy-houston-metro*.
+
+**Checking by eye is fine:** you can compare what you see with Google Maps or
+Apple Maps yourself. If something is wrong, please don't copy the fix from
+Google. Confirm it on the ground or with an official source (City of Houston,
+Harris County, the Census), then fix it in OpenStreetMap at
+https://www.openstreetmap.org. The next data build picks it up.
+
 ## What works
 
 - Map of Houston offline (dark mode for low light and battery saver).

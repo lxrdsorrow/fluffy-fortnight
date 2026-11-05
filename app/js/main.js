@@ -65,20 +65,38 @@ async function buildStyle() {
     sources: {},
     layers: [{ id: 'bg', type: 'background', paint: { 'background-color': fl === 'dark' ? '#1b232b' : '#e9edf0' } }],
   };
+  const attribution = '© OpenStreetMap contributors · Protomaps';
+  state.mapMode = 'none';
   if (state.area && state.meta && state.meta.files && state.meta.files['basemap.pmtiles']) {
     const blob = await areas.getFile(state.area, 'basemap.pmtiles');
     if (blob) {
-      const key = 'basemap-' + state.area + '-' + (state.meta.savedAt || '');
+      // key must be URL-safe (no ":" or capitals), or the map cannot find the file
+      const key = ('basemap-' + state.area + '-' + String(state.meta.savedAt || '').replace(/[^0-9]/g, '')).toLowerCase();
       if (!pmProtocol.get(key)) pmProtocol.add(new pmtiles.PMTiles(new pmtiles.FileSource(new File([blob], key))));
-      style.sources.protomaps = { type: 'vector', url: 'pmtiles://' + key, attribution: '© OpenStreetMap contributors · Protomaps' };
+      style.sources.protomaps = { type: 'vector', url: 'pmtiles://' + key, attribution };
       style.layers = basemaps.layers('protomaps', basemaps.namedFlavor(fl), { lang: 'en' });
+      state.mapMode = 'offline';
+    }
+  } else {
+    // Not downloaded yet: while online, stream the map pictures from the server as a preview.
+    const pack = previewPack();
+    if (pack) {
+      style.sources.protomaps = { type: 'vector', url: 'pmtiles://' + areas.fileUrl(pack.id, 'basemap.pmtiles'), attribution };
+      style.layers = basemaps.layers('protomaps', basemaps.namedFlavor(fl), { lang: 'en' });
+      state.mapMode = 'preview';
     }
   }
   return style;
 }
 
+function previewPack() {
+  if (!navigator.onLine || !state.remote || !state.remote.ok) return null;
+  return state.remote.areas.find((a) => a.files && a.files['basemap.pmtiles']) || null;
+}
+
 function addOverlays() {
   const map = state.map;
+  if (map.getSource('flood')) return; // already added for this style
   const dark = flavor() === 'dark';
   const empty = { type: 'FeatureCollection', features: [] };
   map.addSource('flood', { type: 'geojson', data: state.flood || empty });
@@ -123,7 +141,7 @@ async function setupMap() {
     container: 'map', style: await buildStyle(), center, zoom: state.meta ? 12 : 9,
     attributionControl: { compact: true }, fadeDuration: 0, maxPitch: 0,
   });
-  state.styleKey = state.area + '|' + flavor();
+  state.styleKey = styleKeyNow();
   state.map.touchZoomRotate.disableRotation();
   state.map.on('style.load', addOverlays);
   state.map.on('click', (e) => {
@@ -143,11 +161,15 @@ function padBounds(b, p) {
   return [[b[0] - dx, b[1] - dy], [b[2] + dx, b[3] + dy]];
 }
 
+const styleKeyNow = () => state.area + '|' + flavor() + '|' + (state.area ? 'local' : (previewPack() ? 'preview' : 'none'));
 async function restyle(force) {
-  const key = state.area + '|' + flavor();
+  applyTheme();
+  const key = styleKeyNow();
   if (!force && key === state.styleKey) return;
   state.styleKey = key;
   state.map.setStyle(await buildStyle());
+}
+function applyTheme() {
   document.documentElement.dataset.theme = settings.get().battery ? 'dark' : '';
 }
 
@@ -180,8 +202,12 @@ function showPois(list) {
 // ------------------------------------------------------------------ status + GPS
 function setStatus() {
   const parts = [];
-  parts.push(navigator.onLine ? 'Online' : 'Offline');
-  parts.push(state.meta ? 'map: ' + state.meta.name.split(':')[0] : 'no map downloaded');
+  if (!navigator.onLine) parts.push('Offline');
+  else if (state.remote && !state.remote.ok) parts.push('Online · map server not reachable');
+  else parts.push('Online');
+  if (state.meta) parts.push('map: ' + state.meta.name.split('(')[0].trim());
+  else if (state.mapMode === 'preview') parts.push('online preview — download to use offline');
+  else parts.push('no map downloaded');
   if (settings.get().battery) parts.push('battery saver');
   if (state.me) parts.push(`GPS ±${Math.round(state.me.acc * 3.28)} ft`);
   else if (state.gpsError) parts.push('no GPS fix');
@@ -261,7 +287,12 @@ function attachSearch(input, box, onPick) {
   const render = () => {
     const q = input.value.trim();
     if (q.length < 2) { box.hidden = true; return; }
-    if (!state.area) { box.innerHTML = '<div class="note">Download a map area first (More → Map areas).</div>'; box.hidden = false; return; }
+    if (!state.area) {
+      box.innerHTML = '<div class="note">Search works from the Houston map pack on this device, which is not downloaded yet.</div><button class="item" data-needpack>⬇ Download the Houston map now</button>';
+      box.hidden = false;
+      box.querySelector('[data-needpack]').onclick = (ev) => { ev.stopPropagation(); box.hidden = true; needPack('Search', () => { input.dispatchEvent(new Event('input')); }); };
+      return;
+    }
     const near = state.me ? { lat: state.me.lat, lon: state.me.lon } : null;
     const { results, note } = search(q, near);
     current = results;
@@ -530,7 +561,7 @@ const poiPlace = (p) => ({
 });
 
 function nearestOne(cat) {
-  if (!state.area) return openAreas();
+  if (!state.area) return needPack('Finding the nearest ' + (CATS[cat] ? CATS[cat].label.toLowerCase() : 'place'), () => nearestOne(cat));
   let cats = [cat];
   let warn = '';
   if (cat === 'shelter') {
@@ -870,10 +901,16 @@ function openGuide(tab = 'firstaid') {
   const g = GUIDE.find((x) => x.id === tab) || GUIDE[0];
   const body = showSheet('Survival guide', `
     <div class="note">${DISCLAIMER}</div>
+    <div class="row"><button data-near="hospital">🏥 Nearest hospital</button><button data-near="fire">🚒 Nearest fire / police</button></div>
     <div class="seg" style="grid-template-columns:repeat(4,1fr)">${GUIDE.map((x) => `<button data-tab="${x.id}" aria-pressed="${x.id === g.id}">${x.title}</button>`).join('')}</div>
     <div class="guide">${g.sections.map(([h, items]) => `<h3>${esc(h)}</h3><ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`).join('')}</div>
     <p class="small muted">Sources: American Red Cross, American Heart Association, CDC, National Weather Service, FEMA/Ready.gov, FoodSafety.gov.</p>`, 'guide', $('#sheet').dataset.view !== 'guide');
-  body.onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) openGuide(b.dataset.tab); };
+  body.onclick = (e) => {
+    const b = e.target.closest('[data-tab]');
+    if (b) openGuide(b.dataset.tab);
+    const n = e.target.closest('[data-near]');
+    if (n) nearestOne(n.dataset.near);
+  };
 }
 
 function openChecklist() {
@@ -892,7 +929,8 @@ function openChecklist() {
 // ------------------------------------------------------------------ map areas + storage
 async function openAreas(msg = '') {
   const body = showSheet('Map areas & storage', '<p class="muted">Checking…</p>', 'areas', $('#sheet').dataset.view !== 'areas' && !$('#sheet').hidden);
-  const online = await areas.availableAreas();
+  await refreshRemote();
+  const online = state.remote.ok ? state.remote.areas : null;
   const local = areas.downloadedAreas();
   const est = await areas.storageEstimate();
   const all = new Map();
@@ -901,7 +939,9 @@ async function openAreas(msg = '') {
   const usedLocal = Object.values(local).reduce((n, a) => n + (a.bytes || 0), 0);
   body.innerHTML = `
     ${msg ? `<div class="note">${esc(msg)}</div>` : ''}
-    ${online ? '' : '<div class="note">Offline right now: you can use and delete downloaded areas, but downloading needs internet.</div>'}
+    ${online ? '' : navigator.onLine
+      ? `<div class="note">You are online, but the list of map packs could not be loaded (${esc(state.remote.error)}). <button data-retry>Try again</button></div>`
+      : '<div class="note">Offline right now: you can use and delete downloaded areas, but downloading needs internet.</div>'}
     <p>Map data on this device: <b>${areas.formatBytes(usedLocal)}</b>${est ? ` · free space for this app: about ${areas.formatBytes(Math.max(0, est.quota - est.usage))}` : ''}</p>
     <ul class="list">${[...all.values()].map((a) => {
       const active = state.area === a.id;
@@ -917,14 +957,12 @@ async function openAreas(msg = '') {
     <p class="small muted">Download while you have Wi-Fi. After that, everything works with no internet. Data stays on this device.</p>`;
   body.onclick = async (e) => {
     const dl = e.target.closest('[data-dl]'), use = e.target.closest('[data-use]'), del = e.target.closest('[data-del]');
+    if (e.target.closest('[data-retry]')) { state.remote = null; return openAreas(); }
     if (dl) {
       const a = all.get(dl.dataset.dl);
-      const prog = $('#prog-' + a.id);
-      prog.hidden = false;
       body.querySelectorAll('button').forEach((b) => { b.disabled = true; });
       try {
-        await areas.downloadArea(a, (d, t) => { prog.firstElementChild.style.width = (t ? Math.min(100, (100 * d) / t) : 50) + '%'; });
-        await useArea(a.id, true);
+        await downloadPack(a, $('#prog-' + a.id));
         openAreas(`Downloaded “${a.name}”. It now works offline.`);
       } catch (err) {
         openAreas('Download failed: ' + err.message + '. Your old data (if any) is unchanged.');
@@ -935,6 +973,56 @@ async function openAreas(msg = '') {
       await areas.deleteArea(del.dataset.del);
       if (state.area === del.dataset.del) { const next = Object.keys(areas.downloadedAreas())[0] || null; await useArea(next); }
       openAreas('Deleted.');
+    }
+  };
+}
+
+async function refreshRemote(force) {
+  if (state.remote && state.remote.ok && !force) return state.remote;
+  state.remote = await areas.availableAreas();
+  setStatus();
+  return state.remote;
+}
+
+async function downloadPack(a, progEl) {
+  if (progEl) progEl.hidden = false;
+  const label = progEl && progEl.parentElement.querySelector('.dl-label');
+  await areas.downloadArea(a, (d, t) => {
+    if (progEl) progEl.firstElementChild.style.width = (t ? Math.min(100, (100 * d) / t) : 50) + '%';
+    if (label) label.textContent = `Downloading… ${areas.formatBytes(d)} of ${areas.formatBytes(t)}`;
+  });
+  await useArea(a.id, true);
+}
+
+// Shown when a feature needs the map pack: explains why and offers the download right here.
+async function needPack(what, then) {
+  const body = showSheet('Download the Houston map first', `
+    <p><b>${esc(what)}</b> needs the Houston map pack on this device. It is a one-time download while you have internet. After that, search, directions and everything else work with no internet.</p>
+    <div id="np"><p class="muted">Looking for the map pack…</p></div>`, 'needpack');
+  const r = await refreshRemote();
+  const np = $('#np');
+  if (!np) return;
+  const a = r.ok && r.areas[0];
+  if (!a) {
+    np.innerHTML = navigator.onLine
+      ? `<div class="note">You are online, but the map pack list could not be loaded (${esc(r.error)}).</div><button class="primary big" id="npretry">Try again</button>`
+      : '<div class="note">You are offline. Connect to Wi-Fi or mobile data once to download the map.</div><button class="big" id="npretry">Try again</button>';
+    $('#npretry').onclick = () => { state.remote = null; needPack(what, then); };
+    return;
+  }
+  np.innerHTML = `<p>${esc(a.name)} · <b>${areas.formatBytes(a.bytes)}</b></p>
+    <div class="small muted dl-label">Best on Wi-Fi.</div>
+    <div class="progress" id="npprog" hidden><div></div></div>
+    <button class="primary big" id="npdl">Download now (${areas.formatBytes(a.bytes)})</button>`;
+  $('#npdl').onclick = async () => {
+    $('#npdl').disabled = true;
+    try {
+      await downloadPack(a, $('#npprog'));
+      closeSheet();
+      if (then) then();
+    } catch (err) {
+      np.insertAdjacentHTML('afterbegin', `<div class="note">Download failed: ${esc(err.message)}. Check the connection and try again.</div>`);
+      $('#npdl').disabled = false;
     }
   };
 }
@@ -1011,20 +1099,21 @@ function openAbout() {
 $('#bar').addEventListener('click', (e) => {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (!act) return;
-  if (!state.area && act !== 'more') return openAreas('Download a map area first. You need internet only for this one step.');
-  if (act === 'directions') openDirections();
-  if (act === 'hospital') nearestOne('hospital');
-  if (act === 'shelter') nearestOne('shelter');
-  if (act === 'saved') openSaved();
-  if (act === 'more') openMore();
+  const run = {
+    directions: () => openDirections(), hospital: () => nearestOne('hospital'), shelter: () => nearestOne('shelter'),
+    saved: () => openSaved(), more: () => openMore(),
+  }[act];
+  const what = { directions: 'Directions', hospital: 'Finding the nearest hospital', shelter: 'Finding the nearest shelter', saved: 'Saved places' }[act];
+  if (!state.area && act !== 'more') return needPack(what, run);
+  run();
 });
 $('#dashbtn').onclick = () => renderDash();
 $('#locate').onclick = () => {
   if (state.me) state.map.easeTo({ center: [state.me.lon, state.me.lat], zoom: 16 });
   else showSheet('Location', `<div class="note">No GPS fix yet. GPS works without internet, but can take a minute — try outside or near a window.${state.gpsError ? '<br>(' + esc(state.gpsError) + ')' : ''}</div>`);
 };
-window.addEventListener('online', setStatus);
-window.addEventListener('offline', setStatus);
+window.addEventListener('online', () => { setStatus(); refreshRemote(true).then(() => { if (!state.area) restyle(); }); });
+window.addEventListener('offline', () => { setStatus(); if (!state.area) restyle(); });
 
 // ------------------------------------------------------------------ start
 async function start() {
@@ -1035,12 +1124,14 @@ async function start() {
   state.area = id;
   state.meta = id ? local[id] : null;
   await setupMap();
+  applyTheme();
   await useArea(id);
+  refreshRemote().then(() => { if (!state.area) restyle(); });
   if (settings.get().battery) await applyBattery(); else startGps();
   drawPins();
   renderLayerChips();
   if (trails.current()) { try { if (navigator.wakeLock && !settings.get().battery) wakeLock = await navigator.wakeLock.request('screen'); } catch { /* ignore */ } }
-  if (!id) openAreas('Welcome! First, download the Houston map while you have internet. After that it all works offline.');
+  if (!id) needPack('This app');
   if (!state.meta) state.map.jumpTo({ center: HOME_77088, zoom: 10 });
 }
 start().catch((err) => {

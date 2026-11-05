@@ -381,3 +381,10 @@ self.onmessage = async (ev) => {
     self.postMessage({ id, result: { ok: false, reason: String(err.message || err) } });
   }
 };
+
+// Used only by tests/accuracy.mjs (runs the same routing code outside the browser).
+self.hsmRouteForTests = {
+  load(buf) { G = parseGraph(buf); loadedArea = 'test'; },
+  route,
+  names: () => G.names,
+};

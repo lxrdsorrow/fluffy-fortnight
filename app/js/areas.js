@@ -17,15 +17,49 @@ function writeList(list) {
 /** Areas already saved on this device: {id: meta} */
 export function downloadedAreas() { return readList(); }
 
-/** Areas offered by the server (only works online). */
+// Packs this app version knows about. Used if the pack list (areas.json) cannot
+// be read, so the Houston pack can still be found from its own meta.json.
+export const KNOWN_PACKS = ['houston-metro'];
+
+/**
+ * Packs offered by the server. Returns {ok, areas, error}.
+ * ok=false with navigator.onLine=true means "online, but the download server
+ * did not answer" — that is NOT the same as being offline.
+ */
 export async function availableAreas() {
-  try {
-    const r = await fetch('data/areas.json', { cache: 'no-store' });
-    if (!r.ok) return null;
-    return (await r.json()).areas || [];
-  } catch {
-    return null; // offline: that is fine
+  let lastError = '';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(new URL('data/areas.json', location.href).href + '?t=' + Date.now(), { cache: 'no-store' });
+      if (r.ok) {
+        const list = (await r.json()).areas || [];
+        if (list.length) return { ok: true, areas: list };
+        lastError = 'the pack list is empty';
+      } else lastError = `the pack list answered ${r.status}`;
+    } catch (e) {
+      lastError = navigator.onLine ? 'the download server could not be reached' : 'no internet connection';
+    }
   }
+  // Fallback: ask each known pack directly.
+  const found = [];
+  for (const id of KNOWN_PACKS) {
+    try {
+      const r = await fetch(fileUrl(id, 'meta.json') + '?t=' + Date.now(), { cache: 'no-store' });
+      if (r.ok) found.push(await r.json());
+    } catch { /* keep trying others */ }
+  }
+  if (found.length) return { ok: true, areas: found };
+  return { ok: false, areas: [], error: lastError };
+}
+
+/** True when this device can actually reach the internet / download server right now. */
+export async function canReachServer() {
+  if (!navigator.onLine) return false;
+  try {
+    // data/ is never answered from the offline cache, so this really goes to the server
+    const r = await fetch(new URL('data/areas.json', location.href).href + '?ping=' + Date.now(), { method: 'HEAD', cache: 'no-store' });
+    return r.ok || r.status === 404;
+  } catch { return false; }
 }
 
 /** Download every file of an area. onProgress(doneBytes, totalBytes, fileName) */

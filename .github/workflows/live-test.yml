@@ -1,0 +1,58 @@
+# Tests the LIVE website (GitHub Pages) from GitHub's computers:
+# checks the pack list and map files are reachable, then runs the
+# airplane-mode tests against the real published site.
+name: Live site test
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Build Houston map data']
+    types: [completed]
+    branches: [main]
+  push:
+    branches: [claude/offline-houston-survival-map-evr88f]
+    paths: ['.github/workflows/live-test.yml', 'tests/**']
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SITE: https://lxrdsorrow.github.io/fluffy-fortnight/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: What does the live site send back?
+        run: |
+          set +e
+          for p in "" index.html sw.js js/main.js data/areas.json data/houston-metro/meta.json; do
+            printf '%-32s ' "/$p"; curl -s -o /dev/null -w '%{http_code}  %{size_download} bytes  %{content_type}\n' "$SITE$p"
+          done
+          echo "--- areas.json:"; curl -s "${SITE}data/areas.json" | head -c 600; echo
+          echo "--- range request on basemap.pmtiles (206 = streaming works):"
+          curl -s -o /dev/null -D - -H 'Range: bytes=0-99' "${SITE}data/houston-metro/basemap.pmtiles" | grep -iE '^(HTTP|content-range|content-length|accept-ranges)'
+          for f in basemap.pmtiles search.sqlite graph.bin pois.json flood.geojson; do
+            printf '%-18s ' "$f"; curl -sI "${SITE}data/houston-metro/$f" | grep -iE '^(HTTP|content-length)' | tr '\r\n' '  '; echo
+          done
+      - name: Airplane-mode tests against the live site
+        run: |
+          npm ci
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+          mkdir -p live-data/houston-metro
+          curl -sf -o live-data/areas.json "${SITE}data/areas.json"
+          for f in search.sqlite pois.json meta.json; do curl -sf -o "live-data/houston-metro/$f" "${SITE}data/houston-metro/$f"; done
+          BASE_URL="$SITE" node tests/offline.test.mjs tests/cases.houston-metro.json live-data
+      - name: Report
+        if: always()
+        run: node tests/summary.mjs live-data houston-metro | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-test-screens
+          path: live-data/*.png
+          retention-days: 14

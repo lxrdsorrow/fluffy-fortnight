@@ -60,9 +60,15 @@ EOF
   else
     echo "!! FEMA flood data could not be downloaded; building without the flood layer"
   fi
+  ZCTA_ARG=()
+  if python3 pipeline/fetch_zcta.py --bbox "$W" "$S" "$E" "$N" --out "$WORK/$id-zcta.geojson"; then
+    ZCTA_ARG=(--zcta "$WORK/$id-zcta.geojson")
+  else
+    echo "!! Census ZIP areas could not be downloaded; using OpenStreetMap ZIP codes only"
+  fi
   python3 pipeline/build_area.py --pbf "$WORK/$id.osm.pbf" --out "$OUT/$id" --id "$id" \
     --name "$NAME" --bbox "$W" "$S" "$E" "$N" --kind "$KIND" --region "$REGION" \
-    --curated pipeline/curated_pois.json "${FLOOD_ARG[@]}"
+    --curated pipeline/curated_pois.json "${FLOOD_ARG[@]}" "${ZCTA_ARG[@]}"
 done
 
 python3 pipeline/write_manifest.py "$OUT"
