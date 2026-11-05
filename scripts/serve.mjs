@@ -22,7 +22,16 @@ createServer((req, res) => {
   let st;
   try { st = statSync(file); } catch { res.writeHead(404); return res.end('Not found'); }
   if (!st.isFile()) { res.writeHead(404); return res.end('Not found'); }
-  const headers = { 'Content-Type': TYPES[extname(file)] || 'application/octet-stream', 'Content-Length': st.size, 'Cache-Control': 'no-cache' };
-  res.writeHead(200, headers);
+  const type = TYPES[extname(file)] || 'application/octet-stream';
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  if (range) { // part of a file (the map preview streams the basemap this way)
+    let start = range[1] === '' ? st.size - +range[2] : +range[1];
+    let end = range[1] === '' || range[2] === '' ? st.size - 1 : Math.min(+range[2], st.size - 1);
+    if (start > end || start >= st.size) { res.writeHead(416, { 'Content-Range': `bytes */${st.size}` }); return res.end(); }
+    res.writeHead(206, { 'Content-Type': type, 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-cache' });
+    return req.method === 'HEAD' ? res.end() : createReadStream(file, { start, end }).pipe(res);
+  }
+  res.writeHead(200, { 'Content-Type': type, 'Content-Length': st.size, 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-cache' });
+  if (req.method === 'HEAD') return res.end();
   createReadStream(file).pipe(res);
 }).listen(port, () => console.log(`Houston Survival Map: open http://localhost:${port}/  (Ctrl+C to stop)`));

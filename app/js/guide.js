@@ -11,7 +11,7 @@ export const GUIDE = [
     sections: [
       ['Before anything', [
         'Make sure the scene is safe for you (traffic, water, power lines, fire).',
-        'Call 911. If calls fail, try texting 911, or send someone to the nearest fire station or hospital (use the Nearest buttons).',
+        'Call 911. If calls fail, try texting 911, or send someone to the nearest fire station or hospital (buttons above).',
         'Poison Control (US): 1-800-222-1222.',
       ]],
       ['Heavy bleeding', [

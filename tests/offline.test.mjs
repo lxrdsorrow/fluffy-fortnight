@@ -74,11 +74,42 @@ let page = await ctx.newPage();
 page.on('pageerror', (e) => errors.push(e.message));
 
 try {
-  // ---- download while online
+  // ---- ONLINE, before downloading (bug report #1–#4)
   await page.goto(BASE);
-  await page.waitForSelector(`[data-dl="${cases.area}"]`, { timeout: 20000 });
+  await page.waitForSelector('#npdl, #npretry', { timeout: 30000 });
+  const np = await text(page, '#sheet-body');
+  const st0 = await text(page, '#status');
+  record('O1', 'Online: says online, and offers the pack with size + Download button', /^Online/.test(st0) && !!(await page.$('#npdl')) && /\d+(\.\d+)? (MB|KB|GB)/.test(np),
+    `status="${st0}"; panel: ${np.slice(0, 160)}`);
+  const hasBasemap = JSON.parse(readFileSync(join(dataDir, 'areas.json'), 'utf8')).areas.some((a) => a.files && a.files['basemap.pmtiles']);
+  if (hasBasemap) {
+    await page.click('#sheet-min'); // see the map behind the panel
+    const pv = await page.evaluate(async () => {
+      const m = window.hsm.map;
+      for (let i = 0; i < 40 && !m.getSource('protomaps'); i++) await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => { if (m.loaded()) r(); m.once('idle', r); setTimeout(r, 10000); });
+      return { mode: window.hsm.mapMode, feats: m.queryRenderedFeatures().filter((f) => f.source === 'protomaps').length };
+    });
+    await page.screenshot({ path: join(dataDir, `screen-${cases.area}-online-preview.png`) });
+    record('O2', 'Online before download: map draws streets (streamed preview)', pv.mode === 'preview' && pv.feats > 0, `mode=${pv.mode}, map features drawn=${pv.feats}`);
+  }
+  await closeIfOpen(page);
+  await page.click('[data-act="directions"]');
+  await page.waitForSelector('#npdl, #npretry', { timeout: 15000 });
+  const np2 = await text(page, '#sheet-title') + ' — ' + await text(page, '#sheet-body');
+  await closeIfOpen(page);
+  await page.fill('#q', '901 Bagby');
+  await page.waitForSelector('#suggest:not([hidden])', { timeout: 8000 });
+  const sq = await text(page, '#suggest');
+  await page.fill('#q', '');
+  record('O3', 'Before download: Directions / search explain why and offer the download', /Download the Houston map first/.test(np2) && /Directions/.test(np2) && /Download/.test(sq),
+    `Directions → "${np2.slice(0, 110)}"; search → "${sq.slice(0, 90)}"`);
+
+  // ---- download while online
+  await page.click('[data-act="saved"]');
+  await page.waitForSelector('#npdl', { timeout: 20000 });
   const t0 = Date.now();
-  await page.click(`[data-dl="${cases.area}"]`);
+  await page.click('#npdl');
   await page.waitForFunction(() => document.body.dataset.ready === 'area', null, { timeout: 600000 });
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.waitForTimeout(500);
@@ -96,8 +127,14 @@ try {
   const hasBase = await page.evaluate(() => !!(window.hsm.map.getStyle().sources.protomaps));
   if (hasBase) await page.waitForFunction(() => window.hsm.map.loaded(), null, { timeout: 30000 }).catch(() => {});
   await page.screenshot({ path: join(dataDir, `screen-${cases.area}-offline.png`) });
-  record(1, 'Opens offline, map loads', ready === 'area' && canvas && /Offline/.test(status) && errors.length === 0,
-    `ready=${ready}, map canvas=${canvas}, basemap=${hasBase ? 'yes' : 'NO (none in this data)'}, status="${status}", page errors=${errors.length}`);
+  let drawn = null;
+  if (hasBase) drawn = await page.evaluate(async () => {
+    const m = window.hsm.map;
+    await new Promise((r) => { if (m.loaded()) r(); m.once('idle', r); setTimeout(r, 10000); });
+    return m.queryRenderedFeatures().filter((f) => f.source === 'protomaps').length;
+  });
+  record(1, 'Opens offline, map loads and draws streets', ready === 'area' && canvas && /Offline/.test(status) && errors.length === 0 && (!hasBase || drawn > 0),
+    `ready=${ready}, map canvas=${canvas}, basemap=${hasBase ? `yes, ${drawn} features drawn` : 'NO (none in this data)'}, status="${status}", page errors=${errors.length}`);
 
   // 2. address search
   const addrCases = [...(cases.addressQueries || []), ...(await sampleAddresses())];
@@ -319,6 +356,41 @@ try {
   record(11, 'Battery saver: still maps, searches, routes offline', /battery saver/.test(st11) && dark === 'dark' && /about \d/.test(r11) && !!s11.first,
     `status="${st11}", theme=${dark}, search→"${s11.first.slice(0, 40)}", route ${r11.slice(0, 40)}`);
   await page.screenshot({ path: join(dataDir, `screen-${cases.area}-battery.png`) });
+  await page.reload();
+  await page.waitForFunction(() => document.body.dataset.ready === 'area', null, { timeout: 60000 });
+  await page.waitForTimeout(800);
+  const after = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, status: document.querySelector('#status').textContent }));
+  await page.click('[data-act="more"]');
+  const boxOn = await page.isChecked('#battery');
+  await closeIfOpen(page);
+  record('11b', 'Battery saver stays on after a reload', after.theme === 'dark' && /battery saver/.test(after.status) && boxOn,
+    `theme=${after.theme}, status="${after.status}", checkbox=${boxOn}`);
+
+  // D. desktop layout: bar not stretched, every place toggle fully visible
+  await page.setViewportSize({ width: 1366, height: 800 });
+  await page.waitForTimeout(400);
+  const lay = await page.evaluate(() => {
+    const bar = document.querySelector('#bar').getBoundingClientRect();
+    const chips = [...document.querySelectorAll('#layers [data-layer]')].map((c) => {
+      const r = c.getBoundingClientRect();
+      const box = document.querySelector('#layers').getBoundingClientRect();
+      return { t: c.textContent.trim(), ok: r.left >= box.left - 1 && r.right <= box.right + 1 && r.right <= innerWidth };
+    });
+    return { barW: Math.round(bar.width), cut: chips.filter((c) => !c.ok).map((c) => c.t) };
+  });
+  await page.screenshot({ path: join(dataDir, `screen-${cases.area}-desktop.png`) });
+  record('D', 'Desktop layout: bottom bar not too wide, no place toggle cut off', lay.barW <= 740 && lay.cut.length === 0,
+    `bar width ${lay.barW}px at 1366px screen; cut-off toggles: ${lay.cut.length ? lay.cut.join(', ') : 'none'}`);
+  await page.setViewportSize({ width: 420, height: 860 });
+  await page.click('[data-act="more"]');
+  await page.click('[data-m="guide"]');
+  const guideLinks = await page.$$eval('#sheet-body a, #sheet-body button', (els) => els.map((e) => e.textContent.trim()));
+  await page.click('[data-near="hospital"]');
+  await page.waitForTimeout(500);
+  const g = await text(page, '#sheet-body');
+  record('G', 'First-aid guide: every link/button works (no dead "View map")', /Nearest hospital: [\d.]+ (mi|ft)/.test(g) && !guideLinks.some((t) => /view map/i.test(t)),
+    `guide buttons: ${guideLinks.filter((t) => t.length < 40).join(' / ')}; "Nearest hospital" → ${g.slice(0, 70)}`);
+  await closeIfOpen(page);
 
   // 12. no reviews / no live claims
   const seen = [];

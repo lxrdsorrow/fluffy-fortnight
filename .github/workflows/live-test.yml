@@ -45,7 +45,7 @@ jobs:
           npx playwright install --with-deps chromium
           mkdir -p live-data/houston-metro
           curl -sf -o live-data/areas.json "${SITE}data/areas.json"
-          for f in search.sqlite pois.json; do curl -sf -o "live-data/houston-metro/$f" "${SITE}data/houston-metro/$f"; done
+          for f in search.sqlite pois.json meta.json; do curl -sf -o "live-data/houston-metro/$f" "${SITE}data/houston-metro/$f"; done
           BASE_URL="$SITE" node tests/offline.test.mjs tests/cases.houston-metro.json live-data
       - name: Report
         if: always()

@@ -33,7 +33,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q osmium-tool
-          pip install osmium==4.3.2 shapely numpy
+          pip install osmium==4.3.2 shapely numpy pmtiles mapbox-vector-tile
           npm ci
           node scripts/vendor.mjs
           npm install --no-save playwright@1.63.0
@@ -50,6 +50,7 @@ jobs:
           python3 pipeline/build_area.py --pbf /tmp/fx/testville.osm --out /tmp/fxdata/testville --id testville \
             --name "Testville (synthetic test town)" --bbox -95.473 29.872 -95.421 29.896 --flood /tmp/fx/flood.geojson \
             --curated tests/fixture_curated.json
+          python3 tests/make_fixture_basemap.py /tmp/fxdata/testville/basemap.pmtiles
           python3 pipeline/write_manifest.py /tmp/fxdata
           node tests/offline.test.mjs tests/cases.testville.json /tmp/fxdata
       - name: Download and build Houston data
