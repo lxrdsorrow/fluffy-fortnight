@@ -485,8 +485,15 @@ def write_flood_layer(flood, path):
     for lv, geoms in by.items():
         if not geoms:
             continue
-        merged = shapely.union_all(geoms).simplify(0.00015, preserve_topology=True)
-        merged = shapely.set_precision(merged, 0.00001)
+        try:
+            merged = shapely.union_all(geoms)
+        except shapely.errors.GEOSException:
+            merged = shapely.union_all([shapely.make_valid(g.buffer(0)) for g in geoms])
+        merged = shapely.make_valid(merged).simplify(0.00015, preserve_topology=True)
+        try:
+            merged = shapely.set_precision(shapely.make_valid(merged), 0.00001)
+        except shapely.errors.GEOSException:
+            pass  # keep full precision if rounding would break a shape
         feats.append({"type": "Feature", "properties": {"level": lv}, "geometry": mapping(merged)})
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"type": "FeatureCollection", "features": feats}, f, separators=(",", ":"))

@@ -266,7 +266,7 @@ function describe(path, mode) {
     if (fl & F.UNDERPASS) kinds.push('underpass');
     if (fl & F.FLOOD100) kinds.push('flood100');
     if (fl & F.BAYOU) kinds.push('bayou');
-    if (!(fl & F.FLOOD100) && (fl & F.FLOOD500)) kinds.push('flood500');
+    // moderate-risk (0.2%) floodplain is shown on the map but not listed, or nearly every Houston route would warn
     const key = kinds.join(',') + '|' + nameIdx;
     if (kinds.length && key !== lastSpotKey) {
       for (const k of kinds) counts[k]++;
